@@ -1,0 +1,124 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard | Monitoring{% endblock %}
+
+{% block content %}
+<div class="flex flex-wrap justify-between items-center mb-5 gap-3">
+  <div>
+    <h2 class="text-2xl font-bold">Dashboard</h2>
+    <p class="text-slate-600">Welcome, {{ session.get('admin_username') }}</p>
+  </div>
+  <div class="flex gap-2">
+    <a href="{{ url_for('scan_barcode') }}" class="btn btn-dark">Scan Borrow/Return</a>
+    <a href="{{ url_for('add_item') }}" class="btn btn-primary">+ Add New Item</a>
+  </div>
+</div>
+
+<div class="card overflow-x-auto mb-5">
+  <h3 class="text-xl font-semibold mb-3">Items Currently Borrowed</h3>
+
+  {% if active_borrows %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th>Category</th>
+        <th>Barcode</th>
+        <th>Borrowed By</th>
+        <th>Borrowed At</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in active_borrows %}
+      <tr>
+        <td>{{ row.item_name }}</td>
+        <td>{{ row.item_type }}</td>
+        <td class="font-mono">{{ row.barcode }}</td>
+        <td>{{ row.admin_username }}</td>
+        <td>{{ row.borrowed_at }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-slate-600">No borrowed items at the moment.</p>
+  {% endif %}
+</div>
+
+<div class="card overflow-x-auto mb-5">
+  <h3 class="text-xl font-semibold mb-3">Recent Borrow/Return Transactions</h3>
+
+  {% if recent_transactions %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th>Barcode</th>
+        <th>Borrowed By</th>
+        <th>Borrowed At</th>
+        <th>Returned At</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for tx in recent_transactions %}
+      <tr>
+        <td>{{ tx.item_name }}</td>
+        <td class="font-mono">{{ tx.barcode }}</td>
+        <td>{{ tx.admin_username }}</td>
+        <td>{{ tx.borrowed_at }}</td>
+        <td>{{ tx.returned_at if tx.returned_at else 'Not returned yet' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-slate-600">No transactions yet.</p>
+  {% endif %}
+</div>
+
+<div class="card overflow-x-auto">
+  <h3 class="text-xl font-semibold mb-3">Registered Items</h3>
+
+  {% if items %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Item Name</th>
+        <th>Category</th>
+        <th>Barcode</th>
+        <th>Preview</th>
+        <th>Download</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr>
+        <td>{{ item.id }}</td>
+        <td>{{ item.name }}</td>
+        <td>{{ item.type }}</td>
+        <td class="font-mono">{{ item.barcode }}</td>
+        <td>
+          <img
+            src="{{ url_for('static', filename='barcodes/' + item.barcode_image) }}"
+            alt="Barcode {{ item.barcode }}"
+            class="h-14"
+          >
+        </td>
+        <td>
+          <a
+            href="{{ url_for('static', filename='barcodes/' + item.barcode_image) }}"
+            download
+            class="link"
+          >
+            Download
+          </a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-slate-600">No items registered yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

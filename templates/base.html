@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Monitoring System{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.css') }}">
+</head>
+<body class="bg-slate-100 text-slate-900 min-h-screen">
+  <header class="bg-slate-900 text-white shadow-sm">
+    <div class="container flex justify-between items-center py-4">
+      <h1 class="text-xl font-bold tracking-wide">Barcode Monitoring</h1>
+      {% if session.get('admin_id') %}
+      <nav class="flex gap-2">
+        <a href="{{ url_for('dashboard') }}" class="btn btn-dark">Dashboard</a>
+        <a href="{{ url_for('add_item') }}" class="btn btn-dark">Add Item</a>
+        <a href="{{ url_for('scan_barcode') }}" class="btn btn-dark">Scan Borrow/Return</a>
+        <a href="{{ url_for('logout') }}" class="btn btn-danger">Logout</a>
+      </nav>
+      {% endif %}
+    </div>
+  </header>
+
+  <main class="container py-6">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="mb-4 space-y-2">
+          {% for category, message in messages %}
+            <div class="alert {{ 'alert-error' if category == 'error' else 'alert-success' }}">
+              {{ message }}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

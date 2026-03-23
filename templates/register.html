@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block title %}Register | Monitoring{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto card">
+  <h2 class="text-2xl font-bold mb-4">Register New Admin</h2>
+  <form method="post" class="space-y-3">
+    <div>
+      <label class="label">Username</label>
+      <input type="text" name="username" class="input" required>
+    </div>
+    <div>
+      <label class="label">Password</label>
+      <input type="password" name="password" class="input" required>
+    </div>
+    <button type="submit" class="btn btn-primary w-full">Create Admin</button>
+  </form>
+  <p class="mt-4 text-sm text-slate-600">
+    Already registered?
+    <a href="{{ url_for('login') }}" class="link">Back to Login</a>
+  </p>
+</div>
+{% endblock %}

@@ -1,0 +1,290 @@
+/* Lightweight local utility CSS with Tailwind-like classes for offline usage. */
+:root {
+  --bg: #f1f5f9;
+  --text: #0f172a;
+  --card: #ffffff;
+  --primary: #0f766e;
+  --primary-dark: #115e59;
+  --danger: #b91c1c;
+  --border: #cbd5e1;
+  --muted: #475569;
+  --success-bg: #dcfce7;
+  --success-text: #166534;
+  --error-bg: #fee2e2;
+  --error-text: #991b1b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  background: radial-gradient(circle at top right, #dbeafe, var(--bg));
+  color: var(--text);
+}
+
+.container {
+  width: min(1080px, 92%);
+  margin: 0 auto;
+}
+
+.min-h-screen {
+  min-height: 100vh;
+}
+
+.bg-slate-100 {
+  background-color: var(--bg);
+}
+
+.bg-slate-900 {
+  background-color: #0f172a;
+}
+
+.text-slate-900 {
+  color: var(--text);
+}
+
+.text-slate-600 {
+  color: var(--muted);
+}
+
+.text-white {
+  color: #fff;
+}
+
+.text-sm {
+  font-size: 0.875rem;
+}
+
+.text-xl {
+  font-size: 1.25rem;
+}
+
+.text-2xl {
+  font-size: 1.5rem;
+}
+
+.font-bold {
+  font-weight: 700;
+}
+
+.font-semibold {
+  font-weight: 600;
+}
+
+.font-mono {
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.tracking-wide {
+  letter-spacing: 0.03em;
+}
+
+.shadow-sm {
+  box-shadow: 0 2px 12px rgba(15, 23, 42, 0.12);
+}
+
+.flex {
+  display: flex;
+}
+
+.grid {
+  display: grid;
+}
+
+.grid-cols-1 {
+  grid-template-columns: 1fr;
+}
+
+.justify-between {
+  justify-content: space-between;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.flex-wrap {
+  flex-wrap: wrap;
+}
+
+.gap-2 {
+  gap: 0.5rem;
+}
+
+.gap-3 {
+  gap: 0.75rem;
+}
+
+.gap-4 {
+  gap: 1rem;
+}
+
+.space-y-2 > * + * {
+  margin-top: 0.5rem;
+}
+
+.space-y-3 > * + * {
+  margin-top: 0.75rem;
+}
+
+.py-4 {
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+}
+
+.py-6 {
+  padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
+}
+
+.mb-3 {
+  margin-bottom: 0.75rem;
+}
+
+.mb-4 {
+  margin-bottom: 1rem;
+}
+
+.mb-5 {
+  margin-bottom: 1.25rem;
+}
+
+.mt-4 {
+  margin-top: 1rem;
+}
+
+.max-w-md {
+  max-width: 28rem;
+}
+
+.mx-auto {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.w-full {
+  width: 100%;
+}
+
+.h-14 {
+  height: 56px;
+}
+
+.h-20 {
+  height: 80px;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  padding: 1rem;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-weight: 600;
+}
+
+.input {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.55rem;
+  background: #fff;
+}
+
+.input:focus {
+  outline: 2px solid #2dd4bf;
+  border-color: #14b8a6;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.55rem 0.85rem;
+  border-radius: 0.6rem;
+  text-decoration: none;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--primary-dark);
+}
+
+.btn-dark {
+  background: #334155;
+  color: #fff;
+}
+
+.btn-dark:hover {
+  background: #1e293b;
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #fff;
+}
+
+.btn-danger:hover {
+  background: #991b1b;
+}
+
+.link {
+  color: #0f766e;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.alert {
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.55rem;
+  font-weight: 600;
+}
+
+.alert-success {
+  background: var(--success-bg);
+  color: var(--success-text);
+}
+
+.alert-error {
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 0.65rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.overflow-x-auto {
+  overflow-x: auto;
+}
+
+@media (min-width: 768px) {
+  .md\\:grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
