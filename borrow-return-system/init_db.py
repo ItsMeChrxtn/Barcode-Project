@@ -32,6 +32,7 @@ def init_database():
             available_quantity INTEGER NOT NULL DEFAULT 0,
             barcode TEXT NOT NULL UNIQUE,
             barcode_image TEXT,
+            tool_image TEXT,
             status TEXT NOT NULL DEFAULT 'Available',
             date_added TEXT NOT NULL
         )
@@ -42,6 +43,8 @@ def init_database():
     tools_columns = {row[1] for row in cursor.fetchall()}
     if "barcode_image" not in tools_columns:
         cursor.execute("ALTER TABLE tools ADD COLUMN barcode_image TEXT")
+    if "tool_image" not in tools_columns:
+        cursor.execute("ALTER TABLE tools ADD COLUMN tool_image TEXT")
 
     cursor.execute(
         """

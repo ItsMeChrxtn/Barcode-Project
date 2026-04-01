@@ -2,6 +2,7 @@ import csv
 import os
 import random
 import sqlite3
+import uuid
 from datetime import datetime, date
 from functools import wraps
 from io import StringIO
@@ -21,10 +22,12 @@ import barcode
 from barcode.writer import ImageWriter
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 DATABASE_PATH = os.path.join(BASE_DIR, "database.db")
 BARCODE_DIR = os.path.join(BASE_DIR, "static", "barcodes")
+TOOL_IMAGE_DIR = os.path.join(BASE_DIR, "static", "tool_images")
 TOOL_CODE_PREFIX = "TL-"
 CATEGORY_OPTIONS = [
     "Hand Tools",
@@ -70,6 +73,9 @@ def ensure_schema(db):
     column_names = {row["name"] for row in tools_columns}
     if "barcode_image" not in column_names:
         db.execute("ALTER TABLE tools ADD COLUMN barcode_image TEXT")
+        db.commit()
+    if "tool_image" not in column_names:
+        db.execute("ALTER TABLE tools ADD COLUMN tool_image TEXT")
         db.commit()
 
 
@@ -132,6 +138,25 @@ def generate_next_tool_code(db):
     return f"{TOOL_CODE_PREFIX}{max_number + 1:03d}"
 
 
+def get_next_tool_number(db):
+    tool_codes = db.execute(
+        "SELECT tool_code FROM tools WHERE tool_code LIKE ?",
+        (f"{TOOL_CODE_PREFIX}%",),
+    ).fetchall()
+
+    max_number = -1
+    for row in tool_codes:
+        suffix = row["tool_code"][len(TOOL_CODE_PREFIX) :]
+        if suffix.isdigit():
+            max_number = max(max_number, int(suffix))
+
+    return max_number + 1
+
+
+def format_tool_code(number):
+    return f"{TOOL_CODE_PREFIX}{number:03d}"
+
+
 def get_category_options(selected_category=None):
     options = list(CATEGORY_OPTIONS)
     if selected_category and selected_category not in options:
@@ -164,7 +189,7 @@ def get_tool_by_barcode(db, barcode_value):
     return db.execute(
         """
         SELECT id, tool_name, tool_code, category, description, quantity,
-               available_quantity, barcode, barcode_image, status
+               available_quantity, barcode, barcode_image, tool_image, status
         FROM tools
         WHERE barcode = ?
         """,
@@ -238,6 +263,7 @@ def build_tool_payload(tool):
         "available_quantity": tool["available_quantity"],
         "barcode": tool["barcode"],
         "barcode_image": tool["barcode_image"],
+        "tool_image": tool["tool_image"],
         "status": normalize_tool_status(tool),
     }
 
@@ -441,6 +467,25 @@ def create_barcode_image(barcode_value):
     return os.path.basename(generated_path)
 
 
+def save_tool_image(file_storage):
+    if file_storage is None or not getattr(file_storage, "filename", ""):
+        return None
+
+    filename = secure_filename(file_storage.filename)
+    if not filename or "." not in filename:
+        return None
+
+    extension = filename.rsplit(".", 1)[1].lower()
+    if extension not in {"png", "jpg", "jpeg", "webp"}:
+        return None
+
+    os.makedirs(TOOL_IMAGE_DIR, exist_ok=True)
+    generated_name = f"tool_{uuid.uuid4().hex[:12]}.{extension}"
+    save_path = os.path.join(TOOL_IMAGE_DIR, generated_name)
+    file_storage.save(save_path)
+    return generated_name
+
+
 def build_tool_filters(search, category, availability):
     where_clauses = ["1 = 1"]
     params = []
@@ -642,7 +687,7 @@ def tools():
 
     query = f"""
         SELECT id, tool_name, tool_code, category, description, quantity,
-               available_quantity, barcode, barcode_image, status, date_added
+               available_quantity, barcode, barcode_image, status, date_added, tool_image
         FROM tools
         WHERE {where_sql}
         ORDER BY id DESC
@@ -733,15 +778,7 @@ def add_tool():
         category = request.form.get("category", "").strip()
         description = request.form.get("description", "").strip()
         quantity_text = request.form.get("quantity", "0").strip()
-        form_data = {
-            "tool_name": tool_name,
-            "category": category,
-            "description": description,
-            "quantity": quantity_text,
-        }
-
-        tool_code = generate_next_tool_code(db)
-
+        uploaded_tool_image = save_tool_image(request.files.get("tool_image"))
         if not all([tool_name, category]):
             flash("Tool name and category are required.", "danger")
             return redirect(url_for("tools"))
@@ -752,45 +789,48 @@ def add_tool():
 
         try:
             quantity = int(quantity_text)
-            if quantity < 0:
+            if quantity < 1:
                 raise ValueError
         except ValueError:
-            flash("Quantity must be a non-negative number.", "danger")
+            flash("Quantity must be at least 1.", "danger")
             return redirect(url_for("tools"))
 
-        barcode = generate_unique_barcode(db)
+        start_number = get_next_tool_number(db)
+        created_codes = []
+        created_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        duplicate_code = db.execute(
-            "SELECT id FROM tools WHERE tool_code = ?", (tool_code,)
-        ).fetchone()
-        if duplicate_code:
-            flash("Could not generate a unique tool code. Please try again.", "danger")
-            return redirect(url_for("tools"))
+        for offset in range(quantity):
+            tool_code = format_tool_code(start_number + offset)
+            barcode = generate_unique_barcode(db)
+            barcode_image = create_barcode_image(barcode)
+            db.execute(
+                """
+                INSERT INTO tools
+                (tool_name, tool_code, category, description, quantity, available_quantity, barcode, barcode_image, tool_image, status, date_added)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    tool_name,
+                    tool_code,
+                    category,
+                    description,
+                    1,
+                    1,
+                    barcode,
+                    barcode_image,
+                    uploaded_tool_image,
+                    "Available",
+                    created_time,
+                ),
+            )
+            created_codes.append(tool_code)
 
-        barcode_image = create_barcode_image(barcode)
-        status = "Available" if quantity > 0 else "Unavailable"
-        cursor = db.execute(
-            """
-            INSERT INTO tools
-            (tool_name, tool_code, category, description, quantity, available_quantity, barcode, barcode_image, status, date_added)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                tool_name,
-                tool_code,
-                category,
-                description,
-                quantity,
-                quantity,
-                barcode,
-                barcode_image,
-                status,
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            ),
-        )
         db.commit()
 
-        flash(f"Tool added successfully. Barcode generated: {barcode}", "success")
+        flash(
+            f"Created {quantity} tool unit(s): {created_codes[0]} to {created_codes[-1]}.",
+            "success",
+        )
         return redirect(url_for("tools"))
 
     return redirect(url_for("tools"))
@@ -1260,7 +1300,7 @@ def api_tool_by_barcode(barcode):
     tool = db.execute(
         """
         SELECT id, tool_name, tool_code, category, quantity,
-             available_quantity, barcode, barcode_image, status
+             available_quantity, barcode, barcode_image, tool_image, status
         FROM tools WHERE barcode = ?
         """,
         (barcode.strip(),),
@@ -1280,6 +1320,7 @@ def api_tool_by_barcode(barcode):
             "available_quantity": tool["available_quantity"],
             "barcode": tool["barcode"],
             "barcode_image": tool["barcode_image"],
+            "tool_image": tool["tool_image"],
             "status": normalize_tool_status(tool),
         },
     }

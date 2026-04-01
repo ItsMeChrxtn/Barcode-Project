@@ -233,66 +233,96 @@ body {
 }
 
 .tool-card {
-    border: 1px solid #dce6e0;
-    border-radius: var(--radius-lg);
-    background: linear-gradient(180deg, #ffffff, #fbfefc);
+    border: 1px solid #cfdfe0;
+    border-radius: 1rem;
+    background:
+        radial-gradient(circle at 92% 6%, rgba(34, 197, 94, 0.12), transparent 36%),
+        linear-gradient(170deg, #ffffff 0%, #f6faf8 56%, #edf6f2 100%);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1);
     padding: 0.9rem;
     display: flex;
     flex-direction: column;
-    gap: 0.7rem;
+    gap: 0.66rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    overflow: hidden;
 }
 
-.tool-card-hero {
-    border: 1px solid #d8e7de;
-    border-radius: 0.8rem;
-    background: linear-gradient(180deg, #ffffff, #f7fcf9);
-    padding: 0.55rem;
+.tool-photo-wrap {
+    border: 1px solid #d2e0df;
+    border-radius: 0.86rem;
+    background: linear-gradient(145deg, #f4faf8 0%, #eaf4f0 100%);
+    padding: 0.34rem;
+    position: relative;
 }
 
-.tool-card-hero-image-wrap {
-    display: block;
-    border: 1px solid #d9e5df;
-    border-radius: 0.6rem;
-    background: #ffffff;
-    padding: 0.45rem;
-}
-
-.tool-card-hero-image {
+.tool-photo {
     width: 100%;
-    height: 82px;
-    object-fit: contain;
+    height: 112px;
+    object-fit: cover;
+    border-radius: 0.62rem;
     display: block;
 }
 
-.tool-card-download {
-    display: inline-block;
-    margin-top: 0.4rem;
-    font-size: 0.72rem;
-    color: #047857;
-    text-decoration: none;
+.tool-photo-badge {
+    position: absolute;
+    top: 0.52rem;
+    right: 0.52rem;
+    border-radius: 999px;
+    border: 1px solid rgba(34, 197, 94, 0.35);
+    background: rgba(240, 253, 244, 0.95);
+    color: #166534;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 0.16rem 0.46rem;
 }
 
-.tool-card-download:hover {
-    text-decoration: underline;
+.tool-photo-empty {
+    min-height: 112px;
+    display: grid;
+    place-items: center;
 }
 
-.tool-card-hero-empty {
-    border: 1px dashed #cbd8d1;
-    border-radius: 0.6rem;
-    min-height: 82px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.72rem;
-    color: var(--n-500);
-    background: #f9fcfa;
+.tool-photo-placeholder {
+    color: #647a73;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.tool-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.14);
+    border-color: #98b7b3;
 }
 
 .tool-card-head {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 0.6rem;
+}
+
+.tool-card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.tool-category-chip {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid #bfe8cf;
+    background: #ecfdf3;
+    color: #166534;
+    border-radius: 999px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 0.14rem 0.46rem;
 }
 
 .tool-status-badge {
@@ -302,40 +332,65 @@ body {
 }
 
 .tool-card-id {
-    font-size: 0.68rem;
+    font-size: 0.64rem;
     letter-spacing: 0.07em;
     text-transform: uppercase;
-    color: var(--n-500);
+    color: #0f766e;
+    font-weight: 700;
 }
 
 .tool-card-title {
-    font-size: 1rem;
-    font-weight: 700;
-    line-height: 1.25;
-    color: var(--n-900);
-    margin-top: 0.2rem;
+    font-size: 0.98rem;
+    font-weight: 800;
+    line-height: 1.2;
+    color: #0f172a;
+    margin-top: 0.18rem;
 }
 
 .tool-card-desc {
-    font-size: 0.8rem;
-    color: var(--n-600);
-    line-height: 1.45;
+    font-size: 0.77rem;
+    color: #334155;
+    line-height: 1.5;
     min-height: 2.2rem;
 }
 
 .tool-card-meta {
     display: grid;
-    grid-template-columns: 1fr;
-    gap: 0.25rem;
-    font-size: 0.77rem;
-    color: var(--n-700);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.34rem;
+}
+
+.tool-meta-item {
+    border: 1px solid #d2e1e1;
+    border-radius: 0.62rem;
+    background: rgba(255, 255, 255, 0.9);
+    padding: 0.36rem 0.46rem;
+    display: grid;
+    gap: 0.05rem;
+}
+
+.tool-meta-label {
+    font-size: 0.58rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+    color: #5f766f;
+}
+
+.tool-meta-value {
+    font-size: 0.71rem;
+    color: #0f172a;
+    font-weight: 700;
 }
 
 .tool-card-actions {
     display: grid !important;
-    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
     align-items: stretch;
-    gap: 0.45rem;
+    gap: 0.35rem;
+    margin-top: auto;
+    padding-top: 0.45rem;
+    border-top: 1px dashed #cdded9;
 }
 
 .tool-card-actions > a,
@@ -352,22 +407,63 @@ body {
 .tool-card-actions > a,
 .tool-card-actions button {
     width: 100%;
-    height: 34px;
-    min-height: 34px;
-    max-height: 34px;
+    height: 35px;
+    min-height: 35px;
+    max-height: 35px;
     justify-content: center;
     text-align: center;
 }
 
 .tool-card-actions .tool-action-btn {
     display: inline-flex !important;
-    height: 34px !important;
-    min-height: 34px !important;
-    max-height: 34px !important;
+    height: 35px !important;
+    min-height: 35px !important;
+    max-height: 35px !important;
     padding: 0 !important;
     border-width: 1px !important;
     font-size: 0 !important;
     line-height: 1;
+    border-radius: 0.62rem !important;
+    box-shadow: 0 3px 9px rgba(15, 23, 42, 0.1);
+    transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+
+.tool-card-actions .tool-action-disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.tool-card-actions .tool-action-edit {
+    border-color: #93c5fd !important;
+    color: #1d4ed8 !important;
+    background: linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%) !important;
+}
+
+.tool-card-actions .tool-action-download {
+    border-color: #a5b4fc !important;
+    color: #4338ca !important;
+    background: linear-gradient(180deg, #eef2ff 0%, #e0e7ff 100%) !important;
+}
+
+.tool-card-actions .tool-action-regenerate {
+    border-color: #86efac !important;
+    color: #166534 !important;
+    background: linear-gradient(180deg, #ecfdf5 0%, #d1fae5 100%) !important;
+}
+
+.tool-card-actions .tool-action-delete {
+    border-color: #fca5a5 !important;
+    color: #b91c1c !important;
+    background: linear-gradient(180deg, #fef2f2 0%, #fee2e2 100%) !important;
+}
+
+.tool-card-actions .tool-action-edit:hover,
+.tool-card-actions .tool-action-download:hover,
+.tool-card-actions .tool-action-regenerate:hover,
+.tool-card-actions .tool-action-delete:hover {
+    filter: brightness(0.97);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(15, 23, 42, 0.16);
 }
 
 .tool-card-actions .tool-action-btn svg {
@@ -643,16 +739,35 @@ body {
     }
 
     .tool-card {
-        padding: 0.75rem;
+        padding: 0.72rem;
         gap: 0.55rem;
     }
 
-    .tool-card-title { font-size: 0.92rem; }
+    .tool-card-title { font-size: 0.86rem; }
     .tool-card-desc  { font-size: 0.75rem; min-height: 0; }
-    .tool-card-meta  { font-size: 0.72rem; }
+    .tool-card-meta  { grid-template-columns: 1fr; }
 
-    .tool-card-hero {
-        padding: 0.4rem;
+    .tool-photo {
+        height: 68px;
+    }
+
+    .tool-photo-empty {
+        min-height: 68px;
+    }
+
+    .tool-photo-badge {
+        top: 0.36rem;
+        right: 0.36rem;
+        font-size: 0.52rem;
+        padding: 0.11rem 0.34rem;
+    }
+
+    .tool-meta-item {
+        padding: 0.28rem 0.36rem;
+    }
+
+    .tool-meta-value {
+        font-size: 0.65rem;
     }
 
     .tool-card-hero-image {
@@ -769,8 +884,17 @@ body {
     }
 
     .tool-card-meta {
+        grid-template-columns: 1fr;
         gap: 0.18rem;
-        font-size: 0.69rem;
+    }
+
+    .tool-card-tags {
+        gap: 0.22rem;
+    }
+
+    .tool-category-chip,
+    .tool-status-badge {
+        font-size: 0.56rem;
     }
 
     .borrow-main,
@@ -882,6 +1006,14 @@ body {
     .tool-card-meta,
     .tool-card-desc {
         font-size: 0.68rem;
+    }
+
+    .tool-card-meta {
+        grid-template-columns: 1fr;
+    }
+
+    .tool-photo-empty {
+        min-height: 58px;
     }
 
     .borrow-layout {
