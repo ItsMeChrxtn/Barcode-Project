@@ -2,47 +2,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const mobileToggle = document.getElementById('mobileSidebarToggle');
     const sidebar = document.getElementById('sidebar');
 
-    const requestFullscreen = async () => {
-        const root = document.documentElement;
-        if (!root || document.fullscreenElement) {
-            return true;
-        }
-
-        try {
-            if (root.requestFullscreen) {
-                await root.requestFullscreen();
-                return true;
-            }
-        } catch (error) {
-            return false;
-        }
-
-        return false;
-    };
-
-    const attachFullscreenFallback = () => {
-        const tryOnInteraction = async () => {
-            const entered = await requestFullscreen();
-            if (entered) {
-                document.removeEventListener('click', tryOnInteraction);
-                document.removeEventListener('touchstart', tryOnInteraction);
-                document.removeEventListener('keydown', tryOnInteraction);
-            }
-        };
-
-        document.addEventListener('click', tryOnInteraction, { once: false });
-        document.addEventListener('touchstart', tryOnInteraction, { once: false });
-        document.addEventListener('keydown', tryOnInteraction, { once: false });
-    };
-
-    // Browsers may block fullscreen without user gesture, so we try immediately
-    // then install one-time interaction fallback.
-    requestFullscreen().then((entered) => {
-        if (!entered) {
-            attachFullscreenFallback();
-        }
-    });
-
     const iconMap = {
         success: 'success',
         danger: 'error',
