@@ -909,12 +909,78 @@ body {
     }
 
     .login-card {
-        width: 98vw;
-        max-width: 980px;
+        width: 97vw;
+        max-width: 900px;
     }
 
     .login-left,
     .login-right {
-        padding: 1.4rem 1.2rem;
+        padding: 1rem 0.9rem;
+    }
+
+    .login-left h1 {
+        font-size: 1.25rem;
+        line-height: 1.25;
+    }
+
+    .login-left p,
+    .login-feature-card p {
+        font-size: 0.7rem;
+    }
+
+    .login-right h2 {
+        font-size: 1.35rem;
+    }
+
+    .login-right .mb-8 {
+        margin-bottom: 0.9rem;
+    }
+
+    .login-right .text-sm {
+        font-size: 0.72rem;
+    }
+
+    .login-right label {
+        font-size: 0.72rem;
+    }
+
+    .login-right .input-field {
+        padding: 0.4rem 0.6rem;
+        font-size: 0.78rem;
+    }
+
+    .login-right .btn-primary {
+        padding: 0.48rem 0.75rem;
+        font-size: 0.78rem;
+    }
+}
+
+@media screen and (orientation: landscape) and (max-height: 520px) {
+    /* Keep original login layout, only scale it down further for tight heights. */
+    .login-card {
+        max-width: 860px;
+    }
+
+    .login-left,
+    .login-right {
+        padding: 0.75rem 0.7rem;
+    }
+
+    .login-left h1 {
+        font-size: 1.06rem;
+        line-height: 1.2;
+    }
+
+    .login-left .mt-8 {
+        margin-top: 0.55rem;
+    }
+
+    .login-right h2 {
+        font-size: 1.02rem;
+        margin-top: 0.2rem;
+    }
+
+    .login-right .mb-8 {
+        margin-bottom: 0.45rem;
     }
 }
