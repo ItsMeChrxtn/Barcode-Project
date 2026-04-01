@@ -284,6 +284,24 @@ body {
     gap: 0.45rem;
 }
 
+.tool-card-actions > a,
+.tool-card-actions > form {
+    flex: 1 1 calc(33.333% - 0.45rem);
+    min-width: 0;
+}
+
+.tool-card-actions form {
+    display: flex;
+}
+
+.tool-card-actions > a,
+.tool-card-actions button {
+    width: 100%;
+    min-height: 34px;
+    justify-content: center;
+    text-align: center;
+}
+
 .pagination-wrap {
     margin-top: 1rem;
     border-top: 1px solid #e3ebe6;
@@ -491,6 +509,11 @@ body {
 
     .tool-filter-actions {
         grid-template-columns: 1fr;
+    }
+
+    .tool-card-actions > a,
+    .tool-card-actions > form {
+        flex: 1 1 100%;
     }
 
     .pagination-wrap {
