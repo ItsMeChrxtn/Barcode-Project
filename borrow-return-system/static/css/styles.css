@@ -164,40 +164,45 @@ body {
 }
 
 .result-card > div {
-    padding: 0.24rem 0;
-    border-bottom: 1px dashed #e4ebe7;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .result-card > div:last-child {
     border-bottom: none;
 }
-
 .tool-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.95rem;
 }
+    margin: 0;
 
 .tool-filter-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.5rem;
-    align-items: center;
+    height: 34px;
+    min-height: 34px;
+    max-height: 34px;
 }
 
 .tools-toolbar {
     display: flex;
     align-items: center;
+    display: inline-flex !important;
     justify-content: space-between;
     gap: 0.8rem;
     margin-bottom: 0.9rem;
     flex-wrap: wrap;
+    border-width: 1px !important;
+    font-size: 0;
 }
 
 .tools-toolbar-actions {
     display: flex;
     align-items: center;
-    gap: 0.55rem;
+        min-width: 0;
     flex-wrap: wrap;
 }
 
@@ -327,27 +332,48 @@ body {
 }
 
 .tool-card-actions {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    align-items: stretch;
     gap: 0.45rem;
 }
 
 .tool-card-actions > a,
 .tool-card-actions > form {
-    flex: 1 1 calc(33.333% - 0.45rem);
+    display: block;
+    margin: 0;
     min-width: 0;
 }
 
 .tool-card-actions form {
-    display: flex;
+    display: block;
 }
 
 .tool-card-actions > a,
 .tool-card-actions button {
     width: 100%;
+    height: 34px;
     min-height: 34px;
+    max-height: 34px;
     justify-content: center;
     text-align: center;
+}
+
+.tool-card-actions .tool-action-btn {
+    display: inline-flex !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    max-height: 34px !important;
+    padding: 0 !important;
+    border-width: 1px !important;
+    font-size: 0 !important;
+    line-height: 1;
+}
+
+.tool-card-actions .tool-action-btn svg {
+    width: 15px;
+    height: 15px;
+    flex-shrink: 0;
 }
 
 .tool-action-btn {
@@ -764,5 +790,131 @@ body {
     .borrow-result-card {
         min-height: 100px;
         max-height: 140px;
+    }
+}
+
+/* 7-inch x 5-inch kiosk profile (typically 1024x600 / 800x480 landscape) */
+@media screen and (orientation: landscape) and (max-height: 720px) {
+    body {
+        font-size: 84%;
+    }
+
+    #sidebar,
+    #mobileSidebarToggle {
+        display: none !important;
+    }
+
+    .bottom-nav {
+        display: flex !important;
+        height: 56px;
+    }
+
+    .bottom-nav-item {
+        font-size: 0.52rem;
+        gap: 1px;
+    }
+
+    main.fade-in {
+        padding-left: 0.75rem !important;
+        padding-right: 0.75rem !important;
+        padding-top: 70px !important;
+        padding-bottom: 64px !important;
+    }
+
+    .page-shell {
+        max-width: 100% !important;
+    }
+
+    .hero-panel,
+    .surface-panel,
+    .card-soft,
+    .borrow-main,
+    .borrow-side {
+        border-radius: 0.7rem;
+    }
+
+    .section-head {
+        margin-bottom: 0.55rem;
+        gap: 0.5rem;
+    }
+
+    .input-field {
+        padding: 0.45rem 0.6rem;
+        font-size: 0.78rem;
+    }
+
+    .btn-primary,
+    .btn-outline,
+    .btn-danger {
+        padding-top: 0.42rem;
+        padding-bottom: 0.42rem;
+        font-size: 0.75rem;
+    }
+
+    .data-table thead th {
+        font-size: 0.64rem;
+        padding: 0.38rem 0.45rem 0.38rem 0;
+    }
+
+    .data-table tbody td {
+        font-size: 0.74rem;
+        padding: 0.45rem 0.45rem 0.45rem 0;
+    }
+
+    .tool-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.55rem;
+    }
+
+    .tool-card {
+        padding: 0.6rem;
+        gap: 0.45rem;
+    }
+
+    .tool-card-hero-image {
+        height: 58px;
+    }
+
+    .tool-card-title {
+        font-size: 0.86rem;
+    }
+
+    .tool-card-meta,
+    .tool-card-desc {
+        font-size: 0.68rem;
+    }
+
+    .borrow-layout {
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 0.5rem;
+    }
+
+    .borrower-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.4rem;
+    }
+
+    .scan-input {
+        height: 2rem;
+        font-size: 0.82rem;
+    }
+
+    .borrow-result-card {
+        min-height: 108px;
+        max-height: 150px;
+    }
+
+    .login-page {
+        padding: 0.6rem;
+    }
+
+    .login-card {
+        width: 98vw;
+        max-width: 980px;
+    }
+
+    .login-left,
+    .login-right {
+        padding: 1.4rem 1.2rem;
     }
 }

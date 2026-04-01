@@ -36,16 +36,16 @@
                 <span>Select all on this page</span>
             </label>
             <div class="tools-toolbar-actions">
-                <a href="{{ url_for('print_all_barcodes', search=search, category=selected_category, availability=availability) }}" target="_blank" class="btn-outline">Print All Barcodes</a>
+                <a href="{{ url_for('print_all_barcodes', search=search, category=selected_category, availability=availability, autoprint='1') }}" class="btn-outline">Print All Barcodes</a>
             </div>
         </div>
 
-        <form method="post" action="{{ url_for('print_selected_barcodes') }}" id="printSelectedForm">
+        <form method="post" action="{{ url_for('print_selected_barcodes') }}" id="printSelectedForm"></form>
         <div class="tool-grid">
             {% for tool in tools %}
             <article class="tool-card">
                 <label class="tool-select-box" aria-label="Select {{ tool.tool_name }} for printing">
-                    <input type="checkbox" name="tool_ids" value="{{ tool.id }}" class="tool-select-input" />
+                    <input type="checkbox" name="tool_ids" value="{{ tool.id }}" class="tool-select-input" form="printSelectedForm" />
                     <span>Select</span>
                 </label>
                 <div class="tool-card-hero">
@@ -104,9 +104,8 @@
         </div>
 
         <div class="print-selected-row">
-            <button type="submit" class="btn-primary">Print Selected Barcodes</button>
+            <button type="submit" form="printSelectedForm" class="btn-primary">Print Selected Barcodes</button>
         </div>
-        </form>
 
         <div class="pagination-wrap">
             <div class="text-xs text-slate-500">

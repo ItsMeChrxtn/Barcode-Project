@@ -630,7 +630,7 @@ def tools():
     except ValueError:
         page = 1
 
-    per_page = 8
+    per_page = 9
     where_sql, params = build_tool_filters(search, category, availability)
     total_items = db.execute(
         f"SELECT COUNT(*) AS total FROM tools WHERE {where_sql}",
