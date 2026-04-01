@@ -441,6 +441,37 @@ def create_barcode_image(barcode_value):
     return os.path.basename(generated_path)
 
 
+def build_tool_filters(search, category, availability):
+    where_clauses = ["1 = 1"]
+    params = []
+
+    if search:
+        where_clauses.append(
+            """
+            (
+                tool_name LIKE ?
+                OR tool_code LIKE ?
+                OR barcode LIKE ?
+                OR category LIKE ?
+                OR status LIKE ?
+            )
+            """
+        )
+        wildcard = f"%{search}%"
+        params.extend([wildcard, wildcard, wildcard, wildcard, wildcard])
+
+    if category:
+        where_clauses.append("category = ?")
+        params.append(category)
+
+    if availability == "available":
+        where_clauses.append("available_quantity > 0")
+    elif availability == "unavailable":
+        where_clauses.append("available_quantity <= 0")
+
+    return " AND ".join(where_clauses), params
+
+
 @app.route("/")
 def index():
     if session.get("admin_id"):
@@ -540,7 +571,6 @@ def admins():
 @login_required
 def dashboard():
     db = get_db()
-    today = date.today().isoformat()
 
     total_tools = db.execute("SELECT COUNT(*) AS total FROM tools").fetchone()["total"]
     available_tools = db.execute(
@@ -551,14 +581,7 @@ def dashboard():
     ).fetchone()["total"]
     returned_today = db.execute(
         "SELECT COUNT(*) AS total FROM transactions WHERE DATE(return_date) = ?",
-        (today,),
-    ).fetchone()["total"]
-    overdue_items = db.execute(
-        """
-        SELECT COUNT(*) AS total
-        FROM transactions
-        WHERE status = 'borrowed' AND DATE(expected_return_date) < DATE('now')
-        """
+        (date.today().isoformat(),),
     ).fetchone()["total"]
     total_transactions = db.execute("SELECT COUNT(*) AS total FROM transactions").fetchone()["total"]
     total_admins = db.execute("SELECT COUNT(*) AS total FROM admins").fetchone()["total"]
@@ -588,11 +611,9 @@ def dashboard():
         available_tools=available_tools,
         borrowed_tools=borrowed_tools,
         returned_today=returned_today,
-        overdue_items=overdue_items,
         total_transactions=total_transactions,
         total_admins=total_admins,
         recent_transactions=recent_transactions,
-        today=today,
     )
 
 
@@ -610,34 +631,7 @@ def tools():
         page = 1
 
     per_page = 8
-    where_clauses = ["1 = 1"]
-    params = []
-
-    if search:
-        where_clauses.append(
-            """
-            (
-                tool_name LIKE ?
-                OR tool_code LIKE ?
-                OR barcode LIKE ?
-                OR category LIKE ?
-                OR status LIKE ?
-            )
-            """
-        )
-        wildcard = f"%{search}%"
-        params.extend([wildcard, wildcard, wildcard, wildcard, wildcard])
-
-    if category:
-        where_clauses.append("category = ?")
-        params.append(category)
-
-    if availability == "available":
-        where_clauses.append("available_quantity > 0")
-    elif availability == "unavailable":
-        where_clauses.append("available_quantity <= 0")
-
-    where_sql = " AND ".join(where_clauses)
+    where_sql, params = build_tool_filters(search, category, availability)
     total_items = db.execute(
         f"SELECT COUNT(*) AS total FROM tools WHERE {where_sql}",
         params,
@@ -661,14 +655,72 @@ def tools():
         "tools.html",
         tools=tool_rows,
         categories=categories,
+        category_options=CATEGORY_OPTIONS,
         search=search,
         selected_category=category,
         availability=availability,
+        next_tool_code=generate_next_tool_code(db),
         page=page,
         per_page=per_page,
         total_items=total_items,
         total_pages=total_pages,
     )
+
+
+@app.route("/tools/barcodes/print-selected", methods=["POST"])
+@login_required
+def print_selected_barcodes():
+    db = get_db()
+    selected_ids = request.form.getlist("tool_ids")
+    valid_ids = []
+    for raw_id in selected_ids:
+        try:
+            valid_ids.append(int(raw_id))
+        except ValueError:
+            continue
+
+    if not valid_ids:
+        flash("Select at least one tool barcode to print.", "warning")
+        return redirect(url_for("tools"))
+
+    placeholders = ",".join("?" for _ in valid_ids)
+    rows = db.execute(
+        f"""
+        SELECT id, tool_name, tool_code, category, barcode, barcode_image
+        FROM tools
+        WHERE id IN ({placeholders})
+        ORDER BY id DESC
+        """,
+        valid_ids,
+    ).fetchall()
+
+    return render_template("print_barcodes.html", tools=rows, print_title="Selected Tool Barcodes")
+
+
+@app.route("/tools/barcodes/print-all")
+@login_required
+def print_all_barcodes():
+    db = get_db()
+    search = request.args.get("search", "").strip()
+    category = request.args.get("category", "").strip()
+    availability = request.args.get("availability", "").strip()
+    where_sql, params = build_tool_filters(search, category, availability)
+
+    rows = db.execute(
+        f"""
+        SELECT id, tool_name, tool_code, category, barcode, barcode_image
+        FROM tools
+        WHERE {where_sql}
+        ORDER BY id DESC
+        """,
+        params,
+    ).fetchall()
+
+    if not rows:
+        flash("No tool barcodes available to print for the current filter.", "warning")
+        return redirect(url_for("tools", search=search, category=category, availability=availability))
+
+    return render_template("print_barcodes.html", tools=rows, print_title="All Tool Barcodes")
 
 
 @app.route("/tools/add", methods=["GET", "POST"])
@@ -692,11 +744,11 @@ def add_tool():
 
         if not all([tool_name, category]):
             flash("Tool name and category are required.", "danger")
-            return render_add_tool_page(db, form_data=form_data)
+            return redirect(url_for("tools"))
 
         if category not in CATEGORY_OPTIONS:
             flash("Please select a valid category.", "danger")
-            return render_add_tool_page(db, form_data=form_data)
+            return redirect(url_for("tools"))
 
         try:
             quantity = int(quantity_text)
@@ -704,7 +756,7 @@ def add_tool():
                 raise ValueError
         except ValueError:
             flash("Quantity must be a non-negative number.", "danger")
-            return render_add_tool_page(db, form_data=form_data)
+            return redirect(url_for("tools"))
 
         barcode = generate_unique_barcode(db)
 
@@ -713,7 +765,7 @@ def add_tool():
         ).fetchone()
         if duplicate_code:
             flash("Could not generate a unique tool code. Please try again.", "danger")
-            return render_add_tool_page(db, form_data=form_data)
+            return redirect(url_for("tools"))
 
         barcode_image = create_barcode_image(barcode)
         status = "Available" if quantity > 0 else "Unavailable"
@@ -738,15 +790,10 @@ def add_tool():
         )
         db.commit()
 
-        generated_tool = db.execute(
-            "SELECT * FROM tools WHERE id = ?",
-            (cursor.lastrowid,),
-        ).fetchone()
-
         flash(f"Tool added successfully. Barcode generated: {barcode}", "success")
-        return render_add_tool_page(db, generated_tool=generated_tool)
+        return redirect(url_for("tools"))
 
-    return render_add_tool_page(db)
+    return redirect(url_for("tools"))
 
 
 @app.route("/tools/<int:tool_id>/edit", methods=["GET", "POST"])
@@ -1057,24 +1104,6 @@ def reports():
         """
     ).fetchall()
 
-    overdue_items = db.execute(
-        """
-        SELECT t.id,
-               b.borrower_name,
-               b.borrower_id,
-               tl.tool_name,
-               t.barcode,
-               t.borrow_date,
-             t.expected_return_date,
-             CAST(julianday('now') - julianday(t.expected_return_date) AS INTEGER) AS days_overdue
-        FROM transactions t
-        JOIN borrowers b ON b.id = t.borrower_id
-        JOIN tools tl ON tl.id = t.tool_id
-        WHERE t.status = 'borrowed' AND DATE(t.expected_return_date) < DATE('now')
-        ORDER BY t.expected_return_date ASC
-        """
-    ).fetchall()
-
     borrow_summary = db.execute(
         """
         SELECT DATE(borrow_date) AS date, COUNT(*) AS count
@@ -1100,7 +1129,6 @@ def reports():
         "reports.html",
         most_borrowed_tools=most_borrowed_tools,
         currently_borrowed=currently_borrowed,
-        overdue_items=overdue_items,
         borrow_summary=rows_to_dicts(borrow_summary),
         return_summary=rows_to_dicts(return_summary),
     )

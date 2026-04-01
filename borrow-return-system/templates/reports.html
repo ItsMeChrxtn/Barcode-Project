@@ -10,7 +10,7 @@
             <div class="max-w-2xl space-y-2">
                 <span class="eyebrow">Analytics</span>
                 <h2 class="text-3xl md:text-4xl font-semibold text-white tracking-tight">Reports</h2>
-                <p class="text-emerald-50/85">Review borrowing patterns, overdue items, and current tool activity from one page.</p>
+                <p class="text-emerald-50/85">Review borrowing patterns and current tool activity from one page.</p>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
                 <a href="{{ url_for('export_tools_csv') }}" class="btn-outline">Export Tools CSV</a>
@@ -59,32 +59,10 @@
             </div>
         </div>
 
-        <!-- Overdue Items -->
         <div class="surface-panel p-4 md:p-5">
-            <h3 class="text-lg font-semibold text-slate-900 mb-4">Overdue Items</h3>
-            <div class="table-wrap">
-                <table class="min-w-full text-sm data-table">
-                    <thead>
-                        <tr>
-                            <th class="text-left py-2 pr-3">Tool Name</th>
-                            <th class="text-left py-2 pr-3">Borrowed By</th>
-                            <th class="text-right py-2">Days Overdue</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for row in overdue_items %}
-                        <tr>
-                            <td class="py-2 pr-3">{{ row.tool_name }}</td>
-                            <td class="py-2 pr-3">{{ row.borrower_name }}</td>
-                            <td class="py-2 pr-3 text-right font-semibold text-rose-600">{{ row.days_overdue }}</td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="3" class="py-4 text-center text-slate-500">No overdue items.</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            <h3 class="text-lg font-semibold text-slate-900 mb-4">Borrow Activity Snapshot</h3>
+            <div class="text-sm text-slate-600">
+                <p>This section is reserved for future analytics widgets.</p>
             </div>
         </div>
     </section>

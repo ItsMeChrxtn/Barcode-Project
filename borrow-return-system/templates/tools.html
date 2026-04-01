@@ -6,10 +6,10 @@
 <div class="space-y-5">
     <div class="section-head">
         <h2 class="text-2xl font-semibold text-slate-900 tracking-tight">Tool Management</h2>
-        <a href="{{ url_for('add_tool') }}" class="btn-primary">Add New Tool</a>
+        <button type="button" id="openAddToolModal" class="btn-primary">Add New Tool</button>
     </div>
 
-    <form method="get" class="bg-white rounded-2xl p-4 card-soft panel-subtle grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+    <form method="get" class="bg-white rounded-2xl p-4 card-soft panel-subtle grid grid-cols-4 gap-3 tool-filter-grid">
         <input type="text" name="search" value="{{ search }}" class="input-field" placeholder="Search by name/code/barcode/category/status" />
         <select name="category" class="input-field">
             <option value="">All Categories</option>
@@ -30,9 +30,24 @@
 
     <div class="bg-white rounded-2xl p-4 card-soft">
         {% if tools %}
+        <div class="tools-toolbar">
+            <label class="select-all-toggle">
+                <input id="selectAllTools" type="checkbox" />
+                <span>Select all on this page</span>
+            </label>
+            <div class="tools-toolbar-actions">
+                <a href="{{ url_for('print_all_barcodes', search=search, category=selected_category, availability=availability) }}" target="_blank" class="btn-outline">Print All Barcodes</a>
+            </div>
+        </div>
+
+        <form method="post" action="{{ url_for('print_selected_barcodes') }}" id="printSelectedForm">
         <div class="tool-grid">
             {% for tool in tools %}
             <article class="tool-card">
+                <label class="tool-select-box" aria-label="Select {{ tool.tool_name }} for printing">
+                    <input type="checkbox" name="tool_ids" value="{{ tool.id }}" class="tool-select-input" />
+                    <span>Select</span>
+                </label>
                 <div class="tool-card-hero">
                     {% if tool.barcode_image %}
                         <a href="{{ url_for('static', filename='barcodes/' + tool.barcode_image) }}" target="_blank" class="tool-card-hero-image-wrap">
@@ -50,9 +65,9 @@
                         <h3 class="tool-card-title">{{ tool.tool_name }}</h3>
                     </div>
                     {% if tool.available_quantity > 0 %}
-                        <span class="badge bg-emerald-100 text-emerald-800">Available</span>
+                        <span class="badge tool-status-badge bg-emerald-100 text-emerald-800">Available</span>
                     {% else %}
-                        <span class="badge bg-red-100 text-red-800">Unavailable</span>
+                        <span class="badge tool-status-badge bg-red-100 text-red-800">Unavailable</span>
                     {% endif %}
                 </div>
 
@@ -67,17 +82,31 @@
                 </div>
 
                 <div class="tool-card-actions">
-                    <a href="{{ url_for('edit_tool', tool_id=tool.id) }}" class="btn-outline !py-1.5 !px-3">Edit</a>
+                    <a href="{{ url_for('edit_tool', tool_id=tool.id) }}" class="btn-outline tool-action-btn" data-label="Edit" aria-label="Edit tool">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5h-6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2v-6"/><path stroke-linecap="round" stroke-linejoin="round" d="M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        <span class="tool-action-label">Edit</span>
+                    </a>
                     <form method="post" action="{{ url_for('regenerate_tool_barcode', tool_id=tool.id) }}">
-                        <button type="submit" class="btn-primary !py-1.5 !px-3 !text-xs">Regenerate</button>
+                        <button type="submit" class="btn-primary tool-action-btn" data-label="Regenerate" aria-label="Regenerate barcode">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0A8.003 8.003 0 015.418 15m13.001 0H15"/></svg>
+                            <span class="tool-action-label">Regenerate</span>
+                        </button>
                     </form>
                     <form method="post" action="{{ url_for('delete_tool', tool_id=tool.id) }}" onsubmit="return confirm('Delete this tool?');">
-                        <button type="submit" class="btn-danger">Delete</button>
+                        <button type="submit" class="btn-danger tool-action-btn" data-label="Delete" aria-label="Delete tool">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3m-7 0h8"/></svg>
+                            <span class="tool-action-label">Delete</span>
+                        </button>
                     </form>
                 </div>
             </article>
             {% endfor %}
         </div>
+
+        <div class="print-selected-row">
+            <button type="submit" class="btn-primary">Print Selected Barcodes</button>
+        </div>
+        </form>
 
         <div class="pagination-wrap">
             <div class="text-xs text-slate-500">
@@ -113,5 +142,96 @@
         <div class="py-8 text-center text-slate-500">No tools found.</div>
         {% endif %}
     </div>
+
+    <div id="addToolModal" class="modal-backdrop hidden">
+        <div class="modal-panel">
+            <div class="modal-head">
+                <div>
+                    <h3 class="text-lg font-semibold text-slate-900">Add New Tool</h3>
+                    <p class="text-xs text-slate-500 mt-1">Fill in details, then save to generate a barcode automatically.</p>
+                </div>
+                <button type="button" id="closeAddToolModal" class="btn-outline !px-3 !py-1.5">Close</button>
+            </div>
+
+            <form method="post" action="{{ url_for('add_tool') }}" class="space-y-3">
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Tool Name</label>
+                        <input type="text" name="tool_name" class="input-field" required />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Generated Tool Code</label>
+                        <input type="text" value="{{ next_tool_code }}" class="input-field bg-slate-50" readonly />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Category</label>
+                        <select name="category" class="input-field" required>
+                            <option value="">Select a category</option>
+                            {% for cat in category_options %}
+                            <option value="{{ cat }}">{{ cat }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Quantity</label>
+                        <input type="number" name="quantity" min="0" class="input-field" required />
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium mb-1">Description</label>
+                    <textarea name="description" rows="3" class="input-field"></textarea>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <button type="submit" class="btn-primary">Save Tool</button>
+                    <button type="button" id="cancelAddToolModal" class="btn-outline">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const modal = document.getElementById('addToolModal');
+    const openBtn = document.getElementById('openAddToolModal');
+    const closeBtn = document.getElementById('closeAddToolModal');
+    const cancelBtn = document.getElementById('cancelAddToolModal');
+    const selectAllCheckbox = document.getElementById('selectAllTools');
+    const toolCheckboxes = Array.from(document.querySelectorAll('.tool-select-input'));
+
+    if (!modal || !openBtn) {
+        return;
+    }
+
+    const closeModal = () => modal.classList.add('hidden');
+    const openModal = () => modal.classList.remove('hidden');
+
+    openBtn.addEventListener('click', openModal);
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+    if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            closeModal();
+        }
+    });
+
+    if (selectAllCheckbox && toolCheckboxes.length) {
+        selectAllCheckbox.addEventListener('change', () => {
+            toolCheckboxes.forEach((checkbox) => {
+                checkbox.checked = selectAllCheckbox.checked;
+            });
+        });
+
+        toolCheckboxes.forEach((checkbox) => {
+            checkbox.addEventListener('change', () => {
+                selectAllCheckbox.checked = toolCheckboxes.every((item) => item.checked);
+            });
+        });
+    }
+});
+</script>
 {% endblock %}

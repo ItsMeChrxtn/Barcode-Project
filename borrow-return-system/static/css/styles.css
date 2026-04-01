@@ -174,7 +174,7 @@ body {
 
 .tool-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.95rem;
 }
 
@@ -183,6 +183,48 @@ body {
     grid-template-columns: 1fr 1fr;
     gap: 0.5rem;
     align-items: center;
+}
+
+.tools-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    margin-bottom: 0.9rem;
+    flex-wrap: wrap;
+}
+
+.tools-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    flex-wrap: wrap;
+}
+
+.select-all-toggle,
+.tool-select-box {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.76rem;
+    color: var(--n-700);
+}
+
+.tool-select-box {
+    margin-bottom: -0.1rem;
+}
+
+.tool-select-input,
+#selectAllTools {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--g-700);
+}
+
+.print-selected-row {
+    margin-top: 0.9rem;
+    display: flex;
+    justify-content: flex-end;
 }
 
 .tool-card {
@@ -248,6 +290,12 @@ body {
     gap: 0.6rem;
 }
 
+.tool-status-badge {
+    white-space: nowrap;
+    font-size: 0.64rem;
+    flex-shrink: 0;
+}
+
 .tool-card-id {
     font-size: 0.68rem;
     letter-spacing: 0.07em;
@@ -300,6 +348,68 @@ body {
     min-height: 34px;
     justify-content: center;
     text-align: center;
+}
+
+.tool-action-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+}
+
+.tool-action-btn .tool-action-label {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #111827;
+    color: #fff;
+    font-size: 0.65rem;
+    line-height: 1;
+    border-radius: 0.35rem;
+    padding: 0.3rem 0.4rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+    white-space: nowrap;
+    z-index: 2;
+}
+
+.tool-action-btn:hover .tool-action-label,
+.tool-action-btn:focus-visible .tool-action-label {
+    opacity: 1;
+}
+
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    background: rgba(17, 24, 39, 0.45);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.modal-panel {
+    width: min(760px, 100%);
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
+    background: #fff;
+    border: 1px solid #d9e6de;
+    border-radius: 1rem;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.22);
+    padding: 1rem;
+}
+
+.modal-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+    margin-bottom: 0.8rem;
 }
 
 .pagination-wrap {
@@ -458,6 +568,10 @@ body {
         padding-bottom: 72px !important;
     }
 
+    body {
+        font-size: 88%;
+    }
+
     /* Stat numbers */
     .stat-value      { font-size: 1.6rem; }
     .mini-stat-value { font-size: 1.35rem; }
@@ -481,8 +595,24 @@ body {
     .data-table thead th { padding: 0.45rem 0.6rem 0.45rem 0; font-size: 0.67rem; }
     .data-table tbody td { padding: 0.55rem 0.6rem 0.55rem 0; font-size: 0.82rem; }
 
+    .tool-filter-grid {
+        gap: 0.5rem;
+    }
+
+    .tool-filter-grid .input-field,
+    .tool-filter-grid .btn-primary,
+    .tool-filter-grid .btn-outline {
+        padding: 0.45rem 0.6rem;
+        font-size: 0.76rem;
+        min-height: 31px;
+    }
+
+    .tools-toolbar {
+        margin-bottom: 0.6rem;
+    }
+
     .tool-grid {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 0.7rem;
     }
 
@@ -508,12 +638,8 @@ body {
     }
 
     .tool-filter-actions {
-        grid-template-columns: 1fr;
-    }
-
-    .tool-card-actions > a,
-    .tool-card-actions > form {
-        flex: 1 1 100%;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.35rem;
     }
 
     .pagination-wrap {
@@ -526,8 +652,8 @@ body {
     }
 
     .borrow-layout {
-        grid-template-columns: 1fr;
-        gap: 0.7rem;
+        grid-template-columns: 1.35fr 0.95fr;
+        gap: 0.55rem;
     }
 
     .borrow-main,
@@ -536,9 +662,9 @@ body {
     }
 
     .borrow-hero {
-        flex-direction: column;
-        gap: 0.45rem;
-        margin-bottom: 0.6rem;
+        flex-direction: row;
+        gap: 0.4rem;
+        margin-bottom: 0.45rem;
     }
 
     .borrow-title { font-size: 1.02rem; }
@@ -570,21 +696,25 @@ body {
 
 @media screen and (max-width: 1280px) {
     .tool-grid {
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 }
 
 @media screen and (max-width: 640px) {
     .tool-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
     .borrower-grid {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
 @media screen and (max-width: 880px) and (max-height: 430px) {
+    body {
+        font-size: 82%;
+    }
+
     .bottom-nav {
         height: 56px;
     }

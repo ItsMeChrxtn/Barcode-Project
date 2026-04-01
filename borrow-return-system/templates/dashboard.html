@@ -9,9 +9,9 @@
             <div class="space-y-4 max-w-3xl">
                 <span class="eyebrow">Control Center</span>
                 <h2 class="text-3xl md:text-5xl font-semibold tracking-tight text-white leading-tight">Manage tools, monitor live activity, and keep every borrow cycle visible.</h2>
-                <p class="text-emerald-50/85 text-base md:text-lg max-w-2xl">The dashboard gives your staff one clear view of availability, overdue items, and recent transactions for faster day-to-day operations.</p>
+                <p class="text-emerald-50/85 text-base md:text-lg max-w-2xl">The dashboard gives your staff one clear view of availability and recent transactions for faster day-to-day operations.</p>
                 <div class="flex flex-wrap gap-3 pt-2">
-                    <a href="{{ url_for('add_tool') }}" class="btn-primary">Add Tool</a>
+                    <a href="{{ url_for('tools') }}" class="btn-primary">Add Tool</a>
                     <a href="{{ url_for('borrow_tool') }}" class="btn-outline">Borrow / Return</a>
                     <a href="{{ url_for('admins') }}" class="btn-outline">Manage Admins</a>
                 </div>
@@ -23,8 +23,8 @@
                     <span class="mini-stat-value">{{ total_admins }}</span>
                 </div>
                 <div class="mini-stat-card">
-                    <span class="mini-stat-label">Overdue</span>
-                    <span class="mini-stat-value">{{ overdue_items }}</span>
+                    <span class="mini-stat-label">Borrowed</span>
+                    <span class="mini-stat-value">{{ borrowed_tools }}</span>
                 </div>
                 <div class="mini-stat-card">
                     <span class="mini-stat-label">Available</span>
@@ -57,8 +57,8 @@
             <p class="stat-value">{{ returned_today }}</p>
         </div>
         <div class="stat-card stat-rose">
-            <p class="stat-label">Overdue Items</p>
-            <p class="stat-value">{{ overdue_items }}</p>
+            <p class="stat-label">Admins</p>
+            <p class="stat-value">{{ total_admins }}</p>
         </div>
         <div class="stat-card stat-plum">
             <p class="stat-label">Total Transactions</p>
@@ -97,9 +97,6 @@
                         <td class="py-2 pr-3">{{ tx.return_date or '-' }}</td>
                         <td class="py-2 pr-3">
                             <span class="badge {{ tx.status | status_badge }}">{{ tx.status | status_label }}</span>
-                            {% if tx.status == 'borrowed' and tx.expected_return_date < today %}
-                                <span class="badge bg-red-100 text-red-700 ml-1">Overdue</span>
-                            {% endif %}
                         </td>
                     </tr>
                     {% else %}
