@@ -19,6 +19,7 @@ from flask import (
 )
 import barcode
 from barcode.writer import ImageWriter
+from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -40,6 +41,19 @@ CATEGORY_OPTIONS = [
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "replace-this-in-production")
+app.config["SESSION_COOKIE_SAMESITE"] = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SESSION_COOKIE_SECURE", "0") == "1"
+
+
+def parse_cors_origins(raw_origins):
+    if not raw_origins:
+        return []
+    return [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+
+
+cors_origins = parse_cors_origins(os.environ.get("CORS_ALLOWED_ORIGINS", ""))
+if cors_origins:
+    CORS(app, resources={r"/api/*": {"origins": cors_origins}}, supports_credentials=True)
 
 
 def get_db():
@@ -434,6 +448,11 @@ def index():
     return redirect(url_for("login"))
 
 
+@app.route("/healthz")
+def healthz():
+    return {"ok": True, "service": "borrow-return-system"}, 200
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if session.get("admin_id"):
@@ -585,39 +604,57 @@ def tools():
     category = request.args.get("category", "").strip()
     availability = request.args.get("availability", "").strip()
 
-    query = """
-         SELECT id, tool_name, tool_code, category, description, quantity,
-             available_quantity, barcode, barcode_image, status, date_added
-        FROM tools
-        WHERE 1 = 1
-    """
+    try:
+        page = max(1, int(request.args.get("page", "1")))
+    except ValueError:
+        page = 1
+
+    per_page = 8
+    where_clauses = ["1 = 1"]
     params = []
 
     if search:
-        query += """
-            AND (
+        where_clauses.append(
+            """
+            (
                 tool_name LIKE ?
                 OR tool_code LIKE ?
                 OR barcode LIKE ?
                 OR category LIKE ?
                 OR status LIKE ?
             )
-        """
+            """
+        )
         wildcard = f"%{search}%"
         params.extend([wildcard, wildcard, wildcard, wildcard, wildcard])
 
     if category:
-        query += " AND category = ?"
+        where_clauses.append("category = ?")
         params.append(category)
 
     if availability == "available":
-        query += " AND available_quantity > 0"
+        where_clauses.append("available_quantity > 0")
     elif availability == "unavailable":
-        query += " AND available_quantity <= 0"
+        where_clauses.append("available_quantity <= 0")
 
-    query += " ORDER BY id DESC"
+    where_sql = " AND ".join(where_clauses)
+    total_items = db.execute(
+        f"SELECT COUNT(*) AS total FROM tools WHERE {where_sql}",
+        params,
+    ).fetchone()["total"]
+    total_pages = max(1, (total_items + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    offset = (page - 1) * per_page
 
-    tool_rows = db.execute(query, params).fetchall()
+    query = f"""
+        SELECT id, tool_name, tool_code, category, description, quantity,
+               available_quantity, barcode, barcode_image, status, date_added
+        FROM tools
+        WHERE {where_sql}
+        ORDER BY id DESC
+        LIMIT ? OFFSET ?
+    """
+    tool_rows = db.execute(query, [*params, per_page, offset]).fetchall()
     categories = db.execute("SELECT DISTINCT category FROM tools ORDER BY category").fetchall()
 
     return render_template(
@@ -627,6 +664,10 @@ def tools():
         search=search,
         selected_category=category,
         availability=availability,
+        page=page,
+        per_page=per_page,
+        total_items=total_items,
+        total_pages=total_pages,
     )
 
 
@@ -1294,4 +1335,8 @@ def status_badge(status_value):
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    app.run(
+        host=os.environ.get("FLASK_HOST", "127.0.0.1"),
+        port=int(os.environ.get("PORT", "5000")),
+        debug=os.environ.get("FLASK_DEBUG", "1") == "1",
+    )

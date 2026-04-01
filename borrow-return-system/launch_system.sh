@@ -10,5 +10,15 @@ nohup "$SCRIPT_DIR/run.sh" > "$SCRIPT_DIR/flask.log" 2>&1 &
 # Wait for Flask to start.
 sleep 4
 
-# Open Chromium in app mode. Change to --kiosk for strict kiosk mode.
-chromium-browser --app=http://127.0.0.1:5000 --start-fullscreen
+# Open Chromium in app/kiosk mode optimised for Waveshare 5-inch HDMI LCD (800×480).
+# --kiosk hides all browser UI for a clean kiosk experience.
+# --window-size ensures the window matches the display resolution exactly.
+chromium-browser \
+  --app=http://127.0.0.1:5000 \
+  --kiosk \
+  --window-size=800,480 \
+  --disable-infobars \
+  --noerrdialogs \
+  --disable-session-crashed-bubble \
+  --disable-features=TranslateUI \
+  --check-for-update-interval=31536000

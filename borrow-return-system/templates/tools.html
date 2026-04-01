@@ -9,7 +9,7 @@
         <a href="{{ url_for('add_tool') }}" class="btn-primary">Add New Tool</a>
     </div>
 
-    <form method="get" class="bg-white rounded-2xl p-4 card-soft panel-subtle grid grid-cols-1 md:grid-cols-4 gap-3">
+    <form method="get" class="bg-white rounded-2xl p-4 card-soft panel-subtle grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         <input type="text" name="search" value="{{ search }}" class="input-field" placeholder="Search by name/code/barcode/category/status" />
         <select name="category" class="input-field">
             <option value="">All Categories</option>
@@ -22,76 +22,96 @@
             <option value="available" {% if availability == 'available' %}selected{% endif %}>Available</option>
             <option value="unavailable" {% if availability == 'unavailable' %}selected{% endif %}>Unavailable</option>
         </select>
-        <div class="flex items-center gap-2">
+        <div class="tool-filter-actions">
             <button type="submit" class="btn-primary w-full">Apply Filters</button>
-            <a href="{{ url_for('tools') }}" class="btn-outline">Reset</a>
+            <a href="{{ url_for('tools') }}" class="btn-outline w-full">Reset</a>
         </div>
     </form>
 
-    <div class="bg-white rounded-2xl p-4 card-soft table-wrap">
-        <table class="min-w-full text-sm data-table">
-            <thead>
-                <tr class="text-left border-b">
-                    <th class="py-2 pr-3">ID</th>
-                    <th class="py-2 pr-3">Tool Name</th>
-                    <th class="py-2 pr-3">Code</th>
-                    <th class="py-2 pr-3">Category</th>
-                    <th class="py-2 pr-3">Quantity</th>
-                    <th class="py-2 pr-3">Available</th>
-                    <th class="py-2 pr-3">Barcode</th>
-                    <th class="py-2 pr-3">Barcode Image</th>
-                    <th class="py-2 pr-3">Status</th>
-                    <th class="py-2 pr-3">Date Added</th>
-                    <th class="py-2 pr-3">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for tool in tools %}
-                <tr class="border-b last:border-0 align-top">
-                    <td class="py-2 pr-3">{{ tool.id }}</td>
-                    <td class="py-2 pr-3 font-medium">{{ tool.tool_name }}<div class="text-xs text-slate-500">{{ tool.description or '-' }}</div></td>
-                    <td class="py-2 pr-3">{{ tool.tool_code }}</td>
-                    <td class="py-2 pr-3">{{ tool.category }}</td>
-                    <td class="py-2 pr-3">{{ tool.quantity }}</td>
-                    <td class="py-2 pr-3">{{ tool.available_quantity }}</td>
-                    <td class="py-2 pr-3"><span class="font-mono text-xs text-slate-700">{{ tool.barcode }}</span></td>
-                    <td class="py-2 pr-3">
-                        {% if tool.barcode_image %}
-                            <a href="{{ url_for('static', filename='barcodes/' + tool.barcode_image) }}" target="_blank" class="block w-fit">
-                                <img src="{{ url_for('static', filename='barcodes/' + tool.barcode_image) }}" alt="Barcode {{ tool.barcode }}" class="h-12 border border-slate-200 rounded-md" />
-                            </a>
-                            <a href="{{ url_for('static', filename='barcodes/' + tool.barcode_image) }}" download class="text-xs text-emerald-700 hover:underline">Download PNG</a>
-                        {% else %}
-                            <span class="text-xs text-slate-500">No image</span>
-                        {% endif %}
-                    </td>
-                    <td class="py-2 pr-3">
-                        {% if tool.available_quantity > 0 %}
-                            <span class="badge bg-emerald-100 text-emerald-800">Available</span>
-                        {% else %}
-                            <span class="badge bg-red-100 text-red-800">Unavailable</span>
-                        {% endif %}
-                    </td>
-                    <td class="py-2 pr-3">{{ tool.date_added }}</td>
-                    <td class="py-2 pr-3">
-                        <div class="flex items-center gap-2 flex-wrap">
-                            <a href="{{ url_for('edit_tool', tool_id=tool.id) }}" class="btn-outline !py-1.5 !px-3">Edit</a>
-                            <form method="post" action="{{ url_for('regenerate_tool_barcode', tool_id=tool.id) }}">
-                                <button type="submit" class="btn-primary !py-1.5 !px-3 !text-xs">Regenerate Barcode</button>
-                            </form>
-                            <form method="post" action="{{ url_for('delete_tool', tool_id=tool.id) }}" onsubmit="return confirm('Delete this tool?');">
-                                <button type="submit" class="btn-danger">Delete</button>
-                            </form>
-                        </div>
-                    </td>
-                </tr>
+    <div class="bg-white rounded-2xl p-4 card-soft">
+        {% if tools %}
+        <div class="tool-grid">
+            {% for tool in tools %}
+            <article class="tool-card">
+                <div class="tool-card-hero">
+                    {% if tool.barcode_image %}
+                        <a href="{{ url_for('static', filename='barcodes/' + tool.barcode_image) }}" target="_blank" class="tool-card-hero-image-wrap">
+                            <img src="{{ url_for('static', filename='barcodes/' + tool.barcode_image) }}" alt="Barcode {{ tool.barcode }}" class="tool-card-hero-image" />
+                        </a>
+                        <a href="{{ url_for('static', filename='barcodes/' + tool.barcode_image) }}" download class="tool-card-download">Download PNG</a>
+                    {% else %}
+                        <div class="tool-card-hero-empty">No barcode image</div>
+                    {% endif %}
+                </div>
+
+                <div class="tool-card-head">
+                    <div>
+                        <p class="tool-card-id">ID #{{ tool.id }}</p>
+                        <h3 class="tool-card-title">{{ tool.tool_name }}</h3>
+                    </div>
+                    {% if tool.available_quantity > 0 %}
+                        <span class="badge bg-emerald-100 text-emerald-800">Available</span>
+                    {% else %}
+                        <span class="badge bg-red-100 text-red-800">Unavailable</span>
+                    {% endif %}
+                </div>
+
+                <p class="tool-card-desc">{{ tool.description or 'No description provided.' }}</p>
+
+                <div class="tool-card-meta">
+                    <span><strong>Code:</strong> {{ tool.tool_code }}</span>
+                    <span><strong>Category:</strong> {{ tool.category }}</span>
+                    <span><strong>Stock:</strong> {{ tool.available_quantity }} / {{ tool.quantity }}</span>
+                    <span><strong>Barcode:</strong> <span class="font-mono">{{ tool.barcode }}</span></span>
+                    <span><strong>Date:</strong> {{ tool.date_added }}</span>
+                </div>
+
+                <div class="tool-card-actions">
+                    <a href="{{ url_for('edit_tool', tool_id=tool.id) }}" class="btn-outline !py-1.5 !px-3">Edit</a>
+                    <form method="post" action="{{ url_for('regenerate_tool_barcode', tool_id=tool.id) }}">
+                        <button type="submit" class="btn-primary !py-1.5 !px-3 !text-xs">Regenerate</button>
+                    </form>
+                    <form method="post" action="{{ url_for('delete_tool', tool_id=tool.id) }}" onsubmit="return confirm('Delete this tool?');">
+                        <button type="submit" class="btn-danger">Delete</button>
+                    </form>
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+
+        <div class="pagination-wrap">
+            <div class="text-xs text-slate-500">
+                Showing {{ ((page - 1) * per_page) + 1 }}
+                to {{ ((page - 1) * per_page) + (tools|length) }}
+                of {{ total_items }} tools
+            </div>
+            <div class="pagination-controls">
+                {% if page > 1 %}
+                    <a class="btn-outline !py-1 !px-3" href="{{ url_for('tools', search=search, category=selected_category, availability=availability, page=page-1) }}">Prev</a>
                 {% else %}
-                <tr>
-                    <td colspan="11" class="py-4 text-center text-slate-500">No tools found.</td>
-                </tr>
+                    <span class="btn-outline !py-1 !px-3 opacity-50 pointer-events-none">Prev</span>
+                {% endif %}
+
+                {% for p in range(1, total_pages + 1) %}
+                    {% if p == page %}
+                        <span class="btn-primary !py-1 !px-3">{{ p }}</span>
+                    {% elif p == 1 or p == total_pages or (p >= page - 1 and p <= page + 1) %}
+                        <a class="btn-outline !py-1 !px-3" href="{{ url_for('tools', search=search, category=selected_category, availability=availability, page=p) }}">{{ p }}</a>
+                    {% elif p == page - 2 or p == page + 2 %}
+                        <span class="px-1 text-slate-400">...</span>
+                    {% endif %}
                 {% endfor %}
-            </tbody>
-        </table>
+
+                {% if page < total_pages %}
+                    <a class="btn-outline !py-1 !px-3" href="{{ url_for('tools', search=search, category=selected_category, availability=availability, page=page+1) }}">Next</a>
+                {% else %}
+                    <span class="btn-outline !py-1 !px-3 opacity-50 pointer-events-none">Next</span>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <div class="py-8 text-center text-slate-500">No tools found.</div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

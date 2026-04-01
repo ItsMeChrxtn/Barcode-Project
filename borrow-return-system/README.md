@@ -202,3 +202,60 @@ tail -f flask.log
 ```bash
 export FLASK_SECRET_KEY="your-strong-secret-key"
 ```
+
+## Cloud Deployment (Render + Vercel)
+
+This repository can be deployed with:
+
+- Backend API + server-rendered app on Render
+- Frontend entry URL on Vercel (proxy/gateway to Render)
+
+### 1. Deploy Backend to Render
+
+Render-ready files are already included:
+
+- `render.yaml`
+- `Procfile`
+
+Steps:
+
+1. Push this project to GitHub.
+2. In Render, create a new Web Service from your repository.
+3. Set Root Directory to `borrow-return-system`.
+4. Render will use:
+  - Build command: `pip install -r requirements.txt`
+  - Start command: `gunicorn app:app`
+5. Configure environment variables:
+  - `FLASK_SECRET_KEY` = strong random value
+  - `FLASK_HOST` = `0.0.0.0`
+  - `FLASK_DEBUG` = `0`
+  - `SESSION_COOKIE_SAMESITE` = `None`
+  - `SESSION_COOKIE_SECURE` = `1`
+  - `CORS_ALLOWED_ORIGINS` = your Vercel URL (for example `https://your-frontend-project.vercel.app`)
+
+Health check endpoint:
+
+- `/healthz`
+
+### 2. Deploy Frontend URL to Vercel
+
+This project includes `vercel.json` that rewrites all incoming traffic to your Render backend.
+
+Before deploying to Vercel, edit `vercel.json` and replace:
+
+- `https://your-render-service.onrender.com`
+
+with your actual Render service URL.
+
+Then:
+
+1. Import repository to Vercel.
+2. Set Root Directory to `borrow-return-system`.
+3. Deploy.
+
+After deployment, users can access the app using your Vercel domain, while Python backend runs on Render.
+
+### Notes
+
+- This setup keeps your existing Flask templates and pages unchanged.
+- If you later want a fully separate SPA frontend (React/Vue/etc.) on Vercel and pure JSON API backend on Render, that requires an additional frontend refactor.

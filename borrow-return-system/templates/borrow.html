@@ -3,14 +3,14 @@
 {% block title %}Borrow and Return | Borrow and Return Tool System{% endblock %}
 
 {% block content %}
-<div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
-    <section class="xl:col-span-2 bg-white rounded-2xl p-5 card-soft space-y-5">
-        <div class="flex items-center justify-between gap-3 flex-wrap">
+<div class="borrow-layout">
+    <section class="borrow-main card-soft">
+        <div class="borrow-hero">
             <div>
-                <h2 class="text-2xl font-semibold text-slate-900 tracking-tight">Borrow and Return</h2>
-                <p id="modeDescription" class="text-sm text-slate-500 mt-1">Fill in the borrower details first, then scan the tool barcode to save the borrow record automatically.</p>
+                <h2 class="borrow-title">Borrow and Return Station</h2>
+                <p id="modeDescription" class="borrow-subtitle">Fill in the borrower details first, then scan the tool barcode to save the borrow record automatically.</p>
             </div>
-            <div class="mode-toggle-wrap">
+            <div class="mode-toggle-wrap borrow-mode-toggle">
                 <button type="button" data-mode-button="borrow" class="mode-button rounded-[10px] px-4 py-2 text-sm font-semibold bg-emerald-700 text-white">Borrow</button>
                 <button type="button" data-mode-button="return" class="mode-button rounded-[10px] px-4 py-2 text-sm font-semibold text-slate-600">Return</button>
             </div>
@@ -19,7 +19,7 @@
         <form id="scanForm" class="space-y-4" autocomplete="off">
             <input id="modeInput" type="hidden" name="mode" value="borrow" />
 
-            <div id="borrowerFields" class="grid grid-cols-1 md:grid-cols-2 gap-4 panel-subtle p-4">
+            <div id="borrowerFields" class="borrower-grid panel-subtle p-4">
                 <div>
                     <label class="block text-sm font-medium mb-1">Borrower Name</label>
                     <input type="text" name="borrower_name" class="input-field" />
@@ -38,17 +38,17 @@
                 </div>
             </div>
 
-            <div class="panel-subtle p-4">
-                <label id="barcodeLabel" class="block text-sm font-medium mb-1">Scan Tool Barcode</label>
-                <input id="barcodeInput" data-barcode-input="true" type="text" name="barcode" class="input-field" />
-                <p id="barcodeHelp" class="text-xs text-slate-500 mt-1">Scan the barcode to save the borrow transaction automatically.</p>
+            <div class="scan-panel panel-subtle">
+                <label id="barcodeLabel" class="scan-label">Scan Tool Barcode</label>
+                <input id="barcodeInput" data-barcode-input="true" type="text" name="barcode" class="input-field scan-input" placeholder="Ready for barcode scanner" />
+                <p id="barcodeHelp" class="scan-help">Scan the barcode to save the borrow transaction automatically.</p>
             </div>
         </form>
     </section>
 
-    <section class="bg-white rounded-2xl p-5 card-soft">
+    <section class="borrow-side card-soft">
         <h3 class="text-lg font-semibold text-slate-900 mb-3">Latest Scan Result</h3>
-        <div id="scanResult" class="text-sm text-slate-600 space-y-2 result-card">
+        <div id="scanResult" class="text-sm text-slate-600 space-y-2 result-card borrow-result-card">
             <p>No barcode scanned yet.</p>
         </div>
     </section>
