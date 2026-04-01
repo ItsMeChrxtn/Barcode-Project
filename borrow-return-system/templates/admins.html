@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+
+{% block title %}Admins | Borrow and Return Tool System{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <section class="hero-panel p-6 md:p-8 overflow-hidden">
+        <div class="max-w-3xl space-y-3 relative z-10">
+            <span class="eyebrow">Access Control</span>
+            <h2 class="text-3xl md:text-4xl font-semibold text-white tracking-tight">Admin Accounts</h2>
+            <p class="text-emerald-50/85 max-w-2xl">Create additional administrator accounts so multiple staff members can sign in and manage the tool room without sharing one login.</p>
+        </div>
+        <div class="hero-orb"></div>
+    </section>
+
+    <div class="grid grid-cols-1 xl:grid-cols-[1.1fr_0.9fr] gap-6">
+        <section class="surface-panel p-5 md:p-6 space-y-4">
+            <div class="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                    <h3 class="text-xl font-semibold text-slate-900">Current Admins</h3>
+                    <p class="text-sm text-slate-500">Accounts with access to the system.</p>
+                </div>
+                <span class="metric-chip">{{ admins|length }} account{{ '' if admins|length == 1 else 's' }}</span>
+            </div>
+
+            <div class="table-wrap">
+                <table class="min-w-full text-sm data-table">
+                    <thead>
+                        <tr>
+                            <th class="py-3 pr-3">ID</th>
+                            <th class="py-3 pr-3">Username</th>
+                            <th class="py-3 pr-3">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for admin in admins %}
+                        <tr>
+                            <td class="py-3 pr-3">{{ admin.id }}</td>
+                            <td class="py-3 pr-3 font-medium text-slate-900">{{ admin.username }}</td>
+                            <td class="py-3 pr-3">
+                                {% if admin.id == session.get('admin_id') %}
+                                <span class="badge bg-maroon-100 text-maroon-800">Current Session</span>
+                                {% else %}
+                                <span class="badge bg-slate-100 text-slate-700">Active</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="3" class="py-4 text-center text-slate-500">No admin accounts found.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="surface-panel p-5 md:p-6 space-y-4">
+            <div>
+                <h3 class="text-xl font-semibold text-slate-900">Add New Admin</h3>
+                <p class="text-sm text-slate-500 mt-1">Create a separate login for another staff member.</p>
+            </div>
+
+            <form method="post" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">Username</label>
+                    <input type="text" name="username" value="{{ form_data.get('username', '') }}" class="input-field" required />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Password</label>
+                    <input type="password" name="password" class="input-field" required />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Confirm Password</label>
+                    <input type="password" name="confirm_password" class="input-field" required />
+                </div>
+                <button type="submit" class="btn-primary w-full">Create Admin Account</button>
+            </form>
+        </section>
+    </div>
+</div>
+{% endblock %}

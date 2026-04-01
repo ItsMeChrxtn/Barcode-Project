@@ -1,0 +1,192 @@
+{% extends 'base.html' %}
+
+{% block title %}Reports | Borrow and Return Tool System{% endblock %}
+
+{% block content %}
+<div class="space-y-5">
+    <!-- Hero Section -->
+    <section class="hero-panel p-6 md:p-8 overflow-hidden">
+        <div class="flex flex-wrap items-center justify-between gap-4 relative z-10">
+            <div class="max-w-2xl space-y-2">
+                <span class="eyebrow">Analytics</span>
+                <h2 class="text-3xl md:text-4xl font-semibold text-white tracking-tight">Reports</h2>
+                <p class="text-emerald-50/85">Review borrowing patterns, overdue items, and current tool activity from one page.</p>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+                <a href="{{ url_for('export_tools_csv') }}" class="btn-outline">Export Tools CSV</a>
+                <a href="{{ url_for('export_transactions_csv') }}" class="btn-outline">Export Transactions CSV</a>
+                <button onclick="window.print()" class="btn-primary">Print Report</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Chart Section -->
+    <section class="surface-panel p-5 md:p-6">
+        <h3 class="text-lg font-semibold text-slate-900 mb-4">Borrow and Return Summary (Daily)</h3>
+        <canvas id="dailySummaryChart" height="120"></canvas>
+    </section>
+
+    <!-- Data Tables Grid -->
+    <section class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        <!-- Most Borrowed Tools -->
+        <div class="surface-panel p-4 md:p-5">
+            <h3 class="text-lg font-semibold text-slate-900 mb-4">Most Borrowed Tools</h3>
+            <div class="table-wrap">
+                <table class="min-w-full text-sm data-table">
+                    <thead>
+                        <tr>
+                            <th class="text-left py-2 pr-3">Tool Name</th>
+                            <th class="text-left py-2 pr-3">Tool Code</th>
+                            <th class="text-left py-2 pr-3">Barcode</th>
+                            <th class="text-right py-2">Count</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in most_borrowed_tools %}
+                        <tr>
+                            <td class="py-2 pr-3">{{ row.tool_name }}</td>
+                            <td class="py-2 pr-3">{{ row.tool_code }}</td>
+                            <td class="py-2 pr-3 font-mono text-xs">{{ row.barcode }}</td>
+                            <td class="py-2 pr-3 text-right font-semibold">{{ row.borrow_count }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" class="py-4 text-center text-slate-500">No data available.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Overdue Items -->
+        <div class="surface-panel p-4 md:p-5">
+            <h3 class="text-lg font-semibold text-slate-900 mb-4">Overdue Items</h3>
+            <div class="table-wrap">
+                <table class="min-w-full text-sm data-table">
+                    <thead>
+                        <tr>
+                            <th class="text-left py-2 pr-3">Tool Name</th>
+                            <th class="text-left py-2 pr-3">Borrowed By</th>
+                            <th class="text-right py-2">Days Overdue</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in overdue_items %}
+                        <tr>
+                            <td class="py-2 pr-3">{{ row.tool_name }}</td>
+                            <td class="py-2 pr-3">{{ row.borrower_name }}</td>
+                            <td class="py-2 pr-3 text-right font-semibold text-rose-600">{{ row.days_overdue }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="3" class="py-4 text-center text-slate-500">No overdue items.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- Currently Borrowed -->
+    <section class="surface-panel p-4 md:p-5">
+        <h3 class="text-lg font-semibold text-slate-900 mb-4">Currently Borrowed Tools</h3>
+        <div class="table-wrap">
+            <table class="min-w-full text-sm data-table">
+                <thead>
+                    <tr>
+                        <th class="text-left py-2 pr-3">Tool Name</th>
+                        <th class="text-left py-2 pr-3">Code</th>
+                        <th class="text-left py-2 pr-3">Borrowed By</th>
+                        <th class="text-left py-2 pr-3">Borrowed Date</th>
+                        <th class="text-left py-2 pr-3">Expected Return</th>
+                        <th class="text-right py-2">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in currently_borrowed %}
+                    <tr>
+                        <td class="py-2 pr-3">{{ row.tool_name }}</td>
+                        <td class="py-2 pr-3 font-mono text-xs">{{ row.tool_code }}</td>
+                        <td class="py-2 pr-3">{{ row.borrower_name }}</td>
+                        <td class="py-2 pr-3 text-xs">{{ row.borrow_date }}</td>
+                        <td class="py-2 pr-3 text-xs">{{ row.expected_return_date }}</td>
+                        <td class="py-2 pr-3 text-right">
+                            <span class="inline-block px-2 py-1 rounded text-xs font-medium bg-sky-100 text-sky-700">Active</span>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="py-4 text-center text-slate-500">No active borrowed tools.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const chartTarget = document.getElementById('dailySummaryChart');
+        
+        if (!chartTarget || typeof Chart === 'undefined') {
+            console.warn('Chart.js not available or canvas missing');
+            return;
+        }
+
+        const borrowSummary = {{ borrow_summary | tojson }};
+        const returnSummary = {{ return_summary | tojson }};
+
+        try {
+            new Chart(chartTarget, {
+                type: 'line',
+                data: {
+                    labels: borrowSummary.map(d => d.date),
+                    datasets: [
+                        {
+                            label: 'Tools Borrowed',
+                            data: borrowSummary.map(d => d.count),
+                            borderColor: '#15803d',
+                            backgroundColor: 'rgba(21, 128, 61, 0.12)',
+                            borderWidth: 2,
+                            tension: 0.4,
+                            fill: true
+                        },
+                        {
+                            label: 'Tools Returned',
+                            data: returnSummary.map(d => d.count),
+                            borderColor: '#22c55e',
+                            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.4,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        } catch (e) {
+            console.error('Chart initialization failed:', e);
+        }
+    });
+</script>
+{% endblock %}

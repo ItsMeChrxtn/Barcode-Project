@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Borrow Return Tool System
+Comment=Local Borrow and Return Tool Software
+Exec=/home/pi/borrow-return-system/launch_system.sh
+Path=/home/pi/borrow-return-system
+Icon=utilities-terminal
+Terminal=false
+Categories=Office;Utility;
+StartupNotify=true

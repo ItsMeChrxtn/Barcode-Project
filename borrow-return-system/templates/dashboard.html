@@ -1,0 +1,115 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard | Borrow and Return Tool System{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <section class="hero-panel p-6 md:p-8 overflow-hidden">
+        <div class="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-8 items-end relative z-10">
+            <div class="space-y-4 max-w-3xl">
+                <span class="eyebrow">Control Center</span>
+                <h2 class="text-3xl md:text-5xl font-semibold tracking-tight text-white leading-tight">Manage tools, monitor live activity, and keep every borrow cycle visible.</h2>
+                <p class="text-emerald-50/85 text-base md:text-lg max-w-2xl">The dashboard gives your staff one clear view of availability, overdue items, and recent transactions for faster day-to-day operations.</p>
+                <div class="flex flex-wrap gap-3 pt-2">
+                    <a href="{{ url_for('add_tool') }}" class="btn-primary">Add Tool</a>
+                    <a href="{{ url_for('borrow_tool') }}" class="btn-outline">Borrow / Return</a>
+                    <a href="{{ url_for('admins') }}" class="btn-outline">Manage Admins</a>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div class="mini-stat-card">
+                    <span class="mini-stat-label">Admins</span>
+                    <span class="mini-stat-value">{{ total_admins }}</span>
+                </div>
+                <div class="mini-stat-card">
+                    <span class="mini-stat-label">Overdue</span>
+                    <span class="mini-stat-value">{{ overdue_items }}</span>
+                </div>
+                <div class="mini-stat-card">
+                    <span class="mini-stat-label">Available</span>
+                    <span class="mini-stat-value">{{ available_tools }}</span>
+                </div>
+                <div class="mini-stat-card">
+                    <span class="mini-stat-label">Transactions</span>
+                    <span class="mini-stat-value">{{ total_transactions }}</span>
+                </div>
+            </div>
+        </div>
+        <div class="hero-orb"></div>
+    </section>
+
+    <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div class="stat-card stat-maroon">
+            <p class="stat-label">Total Tools</p>
+            <p class="stat-value">{{ total_tools }}</p>
+        </div>
+        <div class="stat-card stat-emerald">
+            <p class="stat-label">Available Tools</p>
+            <p class="stat-value">{{ available_tools }}</p>
+        </div>
+        <div class="stat-card stat-amber">
+            <p class="stat-label">Borrowed Tools</p>
+            <p class="stat-value">{{ borrowed_tools }}</p>
+        </div>
+        <div class="stat-card stat-sky">
+            <p class="stat-label">Returned Today</p>
+            <p class="stat-value">{{ returned_today }}</p>
+        </div>
+        <div class="stat-card stat-rose">
+            <p class="stat-label">Overdue Items</p>
+            <p class="stat-value">{{ overdue_items }}</p>
+        </div>
+        <div class="stat-card stat-plum">
+            <p class="stat-label">Total Transactions</p>
+            <p class="stat-value">{{ total_transactions }}</p>
+        </div>
+    </section>
+
+    <section class="surface-panel p-4 md:p-6">
+        <div class="section-head">
+            <h3 class="section-title">Recent Transactions</h3>
+            <a href="{{ url_for('transactions') }}" class="btn-outline">View Full History</a>
+        </div>
+        <div class="table-wrap">
+            <table class="min-w-full text-sm data-table">
+                <thead>
+                    <tr class="text-left border-b">
+                        <th class="py-2 pr-3">ID</th>
+                        <th class="py-2 pr-3">Borrower</th>
+                        <th class="py-2 pr-3">Tool</th>
+                        <th class="py-2 pr-3">Barcode</th>
+                        <th class="py-2 pr-3">Borrow Date</th>
+                        <th class="py-2 pr-3">Expected Return</th>
+                        <th class="py-2 pr-3">Return Date</th>
+                        <th class="py-2 pr-3">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tx in recent_transactions %}
+                    <tr class="border-b last:border-0">
+                        <td class="py-2 pr-3">{{ tx.id }}</td>
+                        <td class="py-2 pr-3">{{ tx.borrower_name }} ({{ tx.borrower_id }})</td>
+                        <td class="py-2 pr-3">{{ tx.tool_name }}</td>
+                        <td class="py-2 pr-3">{{ tx.barcode }}</td>
+                        <td class="py-2 pr-3">{{ tx.borrow_date }}</td>
+                        <td class="py-2 pr-3">{{ tx.expected_return_date }}</td>
+                        <td class="py-2 pr-3">{{ tx.return_date or '-' }}</td>
+                        <td class="py-2 pr-3">
+                            <span class="badge {{ tx.status | status_badge }}">{{ tx.status | status_label }}</span>
+                            {% if tx.status == 'borrowed' and tx.expected_return_date < today %}
+                                <span class="badge bg-red-100 text-red-700 ml-1">Overdue</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="py-4 text-center text-slate-500">No recent transactions found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}

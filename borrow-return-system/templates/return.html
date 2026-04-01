@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+
+{% block title %}Return Tool | Borrow and Return Tool System{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
+    <section class="xl:col-span-2 bg-white rounded-2xl p-5 card-soft">
+        <h2 class="text-2xl font-semibold text-slate-900 tracking-tight mb-4">Return Tool</h2>
+
+        <form id="returnForm" method="post" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium mb-1">Scan Borrowed Tool Barcode</label>
+                <input id="returnBarcodeInput" data-barcode-input="true" type="text" name="barcode" class="input-field" autocomplete="off" required />
+                <p class="text-xs text-slate-500 mt-1">Press Enter after scan if your scanner is not configured to send Enter automatically.</p>
+            </div>
+
+            <button type="submit" class="btn-primary">Confirm Return</button>
+        </form>
+    </section>
+
+    <section class="bg-white rounded-2xl p-5 card-soft">
+        <h3 class="text-lg font-semibold text-slate-900 mb-3">Borrow Record Details</h3>
+        <div id="borrowedInfo" class="text-sm text-slate-600 space-y-2">
+            <p>No borrowed record scanned yet.</p>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const infoBox = document.getElementById('borrowedInfo');
+
+        const scanner = setupBarcodeScanner({
+            inputSelector: '#returnBarcodeInput',
+            fetchUrlBuilder: (code) => `/api/borrowed/${encodeURIComponent(code)}`,
+            autoSubmit: false,
+            formSelector: '#returnForm',
+            onData: (data) => {
+                const tx = data.transaction;
+                infoBox.innerHTML = `
+                    <div><span class="font-semibold">Tool:</span> ${tx.tool_name}</div>
+                    <div><span class="font-semibold">Tool Code:</span> ${tx.tool_code}</div>
+                    <div><span class="font-semibold">Barcode:</span> ${tx.barcode}</div>
+                    <div><span class="font-semibold">Borrower:</span> ${tx.borrower_name} (${tx.borrower_id})</div>
+                    <div><span class="font-semibold">Department:</span> ${tx.course_department}</div>
+                    <div><span class="font-semibold">Contact:</span> ${tx.contact_number}</div>
+                    <div><span class="font-semibold">Borrow Date:</span> ${tx.borrow_date}</div>
+                    <div><span class="font-semibold">Expected Return:</span> ${tx.expected_return_date}</div>
+                    <div><span class="font-semibold">Overdue:</span> ${tx.is_overdue ? 'Yes' : 'No'}</div>
+                `;
+            },
+            onMissing: () => {
+                infoBox.innerHTML = '<p class="text-red-700">No active borrowed transaction for this barcode.</p>';
+            },
+            onError: () => {
+                infoBox.innerHTML = '<p class="text-red-700">Unable to load return details.</p>';
+            },
+        });
+
+        const barcodeInput = document.getElementById('returnBarcodeInput');
+        if (barcodeInput) {
+            barcodeInput.addEventListener('input', () => {
+                if (barcodeInput.value.length >= 6 && scanner) {
+                    scanner.processScan();
+                }
+            });
+        }
+    });
+</script>
+{% endblock %}

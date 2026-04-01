@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+
+{% block title %}Add Tool | Borrow and Return Tool System{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl grid grid-cols-1 xl:grid-cols-5 gap-5">
+    <div class="xl:col-span-3">
+        <h2 class="text-2xl font-semibold text-slate-900 tracking-tight mb-4">Add New Tool</h2>
+
+        <form method="post" class="bg-white rounded-2xl p-5 card-soft space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">Tool Name</label>
+                    <input type="text" name="tool_name" value="{{ form_data.get('tool_name', '') }}" class="input-field" required />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Generated Tool Code</label>
+                    <input type="text" value="{{ next_tool_code }}" class="input-field bg-slate-50" readonly />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Category</label>
+                    <select name="category" class="input-field" required>
+                        <option value="">Select a category</option>
+                        {% for category in category_options %}
+                        <option value="{{ category }}" {% if form_data.get('category') == category %}selected{% endif %}>{{ category }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Quantity</label>
+                    <input type="number" name="quantity" min="0" value="{{ form_data.get('quantity', '') }}" class="input-field" required />
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1">Description</label>
+                <textarea name="description" rows="3" class="input-field">{{ form_data.get('description', '') }}</textarea>
+            </div>
+
+            <div class="info-box">
+                You only need to enter the tool details. After you save the tool, the system will automatically generate the barcode number and barcode image for download or printing.
+            </div>
+
+            <div class="flex items-center gap-2">
+                <button type="submit" class="btn-primary">Save Tool And Generate Barcode</button>
+                <a href="{{ url_for('tools') }}" class="btn-outline">Back To Tools</a>
+            </div>
+        </form>
+    </div>
+
+    <div class="xl:col-span-2 bg-white rounded-2xl p-5 card-soft">
+        <h3 class="text-lg font-semibold text-slate-900 mb-3">Generated Barcode</h3>
+        {% if generated_tool %}
+            <div class="space-y-3 text-sm">
+                <div>
+                    <div class="font-semibold text-slate-700">Tool</div>
+                    <div>{{ generated_tool.tool_name }}</div>
+                </div>
+                <div>
+                    <div class="font-semibold text-slate-700">Tool Code</div>
+                    <div>{{ generated_tool.tool_code }}</div>
+                </div>
+                <div>
+                    <div class="font-semibold text-slate-700">Generated Barcode Number</div>
+                    <div class="font-mono text-base text-slate-900">{{ generated_tool.barcode }}</div>
+                </div>
+                <div class="rounded-xl border border-slate-200 p-3 bg-white w-fit">
+                    <img src="{{ url_for('static', filename='barcodes/' + generated_tool.barcode_image) }}" alt="Barcode {{ generated_tool.barcode }}" class="max-w-full h-20" />
+                </div>
+                <div class="flex gap-2 flex-wrap">
+                    <a href="{{ url_for('static', filename='barcodes/' + generated_tool.barcode_image) }}" download class="btn-primary">Download Barcode PNG</a>
+                    <a href="{{ url_for('static', filename='barcodes/' + generated_tool.barcode_image) }}" target="_blank" class="btn-outline">Open Barcode</a>
+                </div>
+                <div class="text-xs text-slate-500">
+                    Download or print this barcode image and attach it to the tool so it can be scanned during borrow and return transactions.
+                </div>
+            </div>
+        {% else %}
+            <div class="text-sm text-slate-500 space-y-2">
+                <p>After you save the tool, the generated barcode image will appear here.</p>
+                <p>This image is what you will print and scan with the USB barcode scanner.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const input = document.querySelector('input[name="tool_name"]');
+        if (input) {
+            input.focus();
+        }
+    });
+</script>
+{% endblock %}

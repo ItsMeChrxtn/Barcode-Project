@@ -1,0 +1,199 @@
+{% extends 'base.html' %}
+
+{% block title %}Borrow and Return | Borrow and Return Tool System{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 xl:grid-cols-3 gap-5">
+    <section class="xl:col-span-2 bg-white rounded-2xl p-5 card-soft space-y-5">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+                <h2 class="text-2xl font-semibold text-slate-900 tracking-tight">Borrow and Return</h2>
+                <p id="modeDescription" class="text-sm text-slate-500 mt-1">Fill in the borrower details first, then scan the tool barcode to save the borrow record automatically.</p>
+            </div>
+            <div class="mode-toggle-wrap">
+                <button type="button" data-mode-button="borrow" class="mode-button rounded-[10px] px-4 py-2 text-sm font-semibold bg-emerald-700 text-white">Borrow</button>
+                <button type="button" data-mode-button="return" class="mode-button rounded-[10px] px-4 py-2 text-sm font-semibold text-slate-600">Return</button>
+            </div>
+        </div>
+
+        <form id="scanForm" class="space-y-4" autocomplete="off">
+            <input id="modeInput" type="hidden" name="mode" value="borrow" />
+
+            <div id="borrowerFields" class="grid grid-cols-1 md:grid-cols-2 gap-4 panel-subtle p-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">Borrower Name</label>
+                    <input type="text" name="borrower_name" class="input-field" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Borrower ID</label>
+                    <input type="text" name="borrower_id" class="input-field" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Course / Department</label>
+                    <input type="text" name="course_department" class="input-field" />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Contact Number</label>
+                    <input type="text" name="contact_number" class="input-field" />
+                </div>
+            </div>
+
+            <div class="panel-subtle p-4">
+                <label id="barcodeLabel" class="block text-sm font-medium mb-1">Scan Tool Barcode</label>
+                <input id="barcodeInput" data-barcode-input="true" type="text" name="barcode" class="input-field" />
+                <p id="barcodeHelp" class="text-xs text-slate-500 mt-1">Scan the barcode to save the borrow transaction automatically.</p>
+            </div>
+        </form>
+    </section>
+
+    <section class="bg-white rounded-2xl p-5 card-soft">
+        <h3 class="text-lg font-semibold text-slate-900 mb-3">Latest Scan Result</h3>
+        <div id="scanResult" class="text-sm text-slate-600 space-y-2 result-card">
+            <p>No barcode scanned yet.</p>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const form = document.getElementById('scanForm');
+        const barcodeInput = document.getElementById('barcodeInput');
+        const modeInput = document.getElementById('modeInput');
+        const modeDescription = document.getElementById('modeDescription');
+        const barcodeLabel = document.getElementById('barcodeLabel');
+        const barcodeHelp = document.getElementById('barcodeHelp');
+        const borrowerFields = document.getElementById('borrowerFields');
+        const resultBox = document.getElementById('scanResult');
+        const modeButtons = document.querySelectorAll('[data-mode-button]');
+        let scanTimer = null;
+        let isProcessing = false;
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function renderResult(data) {
+            const tool = data.tool || null;
+            const transaction = data.transaction || null;
+            const rows = [];
+
+            if (tool) {
+                rows.push(`<div><span class="font-semibold">Tool:</span> ${escapeHtml(tool.tool_name)}</div>`);
+                rows.push(`<div><span class="font-semibold">Tool Code:</span> ${escapeHtml(tool.tool_code)}</div>`);
+                rows.push(`<div><span class="font-semibold">Barcode:</span> ${escapeHtml(tool.barcode)}</div>`);
+                rows.push(`<div><span class="font-semibold">Category:</span> ${escapeHtml(tool.category)}</div>`);
+                rows.push(`<div><span class="font-semibold">Available Qty:</span> ${escapeHtml(tool.available_quantity)}</div>`);
+                rows.push(`<div><span class="font-semibold">Status:</span> ${escapeHtml(tool.status)}</div>`);
+            }
+
+            if (transaction) {
+                rows.push(`<div><span class="font-semibold">Borrower:</span> ${escapeHtml(transaction.borrower_name)} (${escapeHtml(transaction.borrower_id)})</div>`);
+                rows.push(`<div><span class="font-semibold">Course / Department:</span> ${escapeHtml(transaction.course_department)}</div>`);
+                rows.push(`<div><span class="font-semibold">Contact Number:</span> ${escapeHtml(transaction.contact_number)}</div>`);
+                rows.push(`<div><span class="font-semibold">Borrowed At:</span> ${escapeHtml(transaction.borrow_date)}</div>`);
+                if (transaction.return_date) {
+                    rows.push(`<div><span class="font-semibold">Returned At:</span> ${escapeHtml(transaction.return_date)}</div>`);
+                }
+            }
+
+            resultBox.innerHTML = rows.length ? rows.join('') : '<p>No barcode scanned yet.</p>';
+        }
+
+        function setMode(mode) {
+            const borrowMode = mode === 'borrow';
+            modeInput.value = mode;
+            borrowerFields.classList.toggle('hidden', !borrowMode);
+            barcodeLabel.textContent = borrowMode ? 'Scan Tool Barcode' : 'Scan Borrowed Tool Barcode';
+            barcodeHelp.textContent = borrowMode
+                ? 'Scan the barcode to save the borrow transaction automatically.'
+                : 'Scan the borrowed tool barcode to save the return transaction automatically.';
+            modeDescription.textContent = borrowMode
+                ? 'Fill in the borrower details first, then scan the tool barcode to save the borrow record automatically.'
+                : 'Return mode only needs the barcode. Scan the borrowed tool and the system will save the return date automatically.';
+
+            modeButtons.forEach((button) => {
+                const isActive = button.dataset.modeButton === mode;
+                button.classList.toggle('bg-emerald-700', isActive);
+                button.classList.toggle('text-white', isActive);
+                button.classList.toggle('text-slate-600', !isActive);
+            });
+
+            barcodeInput.value = '';
+            barcodeInput.focus();
+        }
+
+        async function processScan() {
+            const barcode = barcodeInput.value.trim();
+            if (!barcode || isProcessing) {
+                return;
+            }
+
+            const payload = {
+                mode: modeInput.value,
+                barcode,
+                borrower_name: form.borrower_name.value.trim(),
+                borrower_id: form.borrower_id.value.trim(),
+                course_department: form.course_department.value.trim(),
+                contact_number: form.contact_number.value.trim(),
+            };
+
+            isProcessing = true;
+            try {
+                const response = await fetch('/api/scan/process', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload),
+                });
+                const data = await response.json();
+                renderResult(data);
+                if (window.showAppAlert) {
+                    window.showAppAlert(data.message, data.category || (response.ok ? 'success' : 'error'));
+                }
+
+                if (response.ok) {
+                    barcodeInput.value = '';
+                    barcodeInput.focus();
+                }
+            } catch (error) {
+                resultBox.innerHTML = '<p class="text-red-700">Unable to save the scanned record right now.</p>';
+                if (window.showAppAlert) {
+                    window.showAppAlert('Unable to save the scanned record right now.', 'error');
+                }
+            } finally {
+                isProcessing = false;
+            }
+        }
+
+        modeButtons.forEach((button) => {
+            button.addEventListener('click', () => setMode(button.dataset.modeButton));
+        });
+
+        barcodeInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                window.clearTimeout(scanTimer);
+                processScan();
+            }
+        });
+
+        barcodeInput.addEventListener('input', () => {
+            window.clearTimeout(scanTimer);
+            if (barcodeInput.value.trim().length < 6) {
+                return;
+            }
+            scanTimer = window.setTimeout(processScan, 180);
+        });
+
+        setMode('borrow');
+    });
+</script>
+{% endblock %}

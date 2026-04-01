@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+
+{% block title %}Transactions | Borrow and Return Tool System{% endblock %}
+
+{% block content %}
+<div class="space-y-5">
+    <h2 class="text-2xl font-semibold text-slate-900 tracking-tight">Transaction History</h2>
+
+    <form method="get" class="bg-white rounded-2xl p-4 card-soft grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-3">
+        <input type="text" name="search" value="{{ search }}" class="input-field" placeholder="Search all fields" />
+
+        <select name="status" class="input-field">
+            <option value="">All Status</option>
+            <option value="borrowed" {% if selected_status == 'borrowed' %}selected{% endif %}>Borrowed</option>
+            <option value="returned" {% if selected_status == 'returned' %}selected{% endif %}>Returned</option>
+            <option value="returned_overdue" {% if selected_status == 'returned_overdue' %}selected{% endif %}>Returned Overdue</option>
+        </select>
+
+        <input type="text" name="borrower" value="{{ borrower }}" class="input-field" placeholder="Borrower ID" />
+        <input type="text" name="tool" value="{{ tool }}" class="input-field" placeholder="Tool Name" />
+
+        <input type="date" name="date_from" value="{{ date_from }}" class="input-field" />
+        <input type="date" name="date_to" value="{{ date_to }}" class="input-field" />
+
+        <button type="submit" class="btn-primary md:col-span-3 xl:col-span-1">Filter</button>
+        <a href="{{ url_for('transactions') }}" class="btn-outline md:col-span-3 xl:col-span-1 text-center">Reset</a>
+    </form>
+
+    <div class="bg-white rounded-2xl p-4 card-soft">
+        <div class="flex justify-end mb-3">
+            <a href="{{ url_for('export_transactions_csv') }}" class="btn-outline">Export Transactions CSV</a>
+        </div>
+        <div class="table-wrap">
+            <table class="min-w-full text-sm">
+                <thead>
+                    <tr class="text-left border-b">
+                        <th class="py-2 pr-3">Transaction ID</th>
+                        <th class="py-2 pr-3">Borrower</th>
+                        <th class="py-2 pr-3">Tool</th>
+                        <th class="py-2 pr-3">Barcode</th>
+                        <th class="py-2 pr-3">Borrow Date</th>
+                        <th class="py-2 pr-3">Expected Return</th>
+                        <th class="py-2 pr-3">Return Date</th>
+                        <th class="py-2 pr-3">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tx in transactions %}
+                    <tr class="border-b last:border-0">
+                        <td class="py-2 pr-3">{{ tx.id }}</td>
+                        <td class="py-2 pr-3">{{ tx.borrower_name }} ({{ tx.borrower_id }})</td>
+                        <td class="py-2 pr-3">{{ tx.tool_name }}</td>
+                        <td class="py-2 pr-3">{{ tx.barcode }}</td>
+                        <td class="py-2 pr-3">{{ tx.borrow_date }}</td>
+                        <td class="py-2 pr-3">{{ tx.expected_return_date }}</td>
+                        <td class="py-2 pr-3">{{ tx.return_date or '-' }}</td>
+                        <td class="py-2 pr-3">
+                            <span class="badge {{ tx.status | status_badge }}">{{ tx.status | status_label }}</span>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="py-4 text-center text-slate-500">No transactions found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
