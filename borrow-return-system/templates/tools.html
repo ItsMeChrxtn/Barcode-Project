@@ -36,6 +36,9 @@
                 <span>Select all on this page</span>
             </label>
             <div class="tools-toolbar-actions">
+                <span id="selectedToolsCount" class="tools-selected-count">0 selected</span>
+                <form method="post" action="{{ url_for('delete_selected_tools') }}" id="deleteSelectedForm"></form>
+                <button type="submit" form="deleteSelectedForm" id="deleteSelectedButton" class="btn-danger" disabled>Delete Selected</button>
                 <a href="{{ url_for('print_all_barcodes', search=search, category=selected_category, availability=availability, autoprint='1') }}" class="btn-outline">Print All Barcodes</a>
             </div>
         </div>
@@ -44,8 +47,8 @@
         <div class="tool-grid">
             {% for tool in tools %}
             <article class="tool-card">
-                <label class="tool-select-box" aria-label="Select {{ tool.tool_name }} for printing">
-                    <input type="checkbox" name="tool_ids" value="{{ tool.id }}" class="tool-select-input" form="printSelectedForm" />
+                <label class="tool-select-box" aria-label="Select {{ tool.tool_name }}">
+                    <input type="checkbox" name="tool_ids" value="{{ tool.id }}" class="tool-select-input" data-tool-name="{{ tool.tool_name }}" />
                     <span>Select</span>
                 </label>
 
@@ -110,7 +113,7 @@
                             <span class="tool-action-label">Regenerate</span>
                         </button>
                     </form>
-                    <form method="post" action="{{ url_for('delete_tool', tool_id=tool.id) }}" onsubmit="return confirm('Delete this tool?');">
+                    <form method="post" action="{{ url_for('delete_tool', tool_id=tool.id) }}" class="single-delete-form" data-tool-name="{{ tool.tool_name }}">
                         <button type="submit" class="btn-danger tool-action-btn tool-action-delete" data-label="Delete" aria-label="Delete tool">
                             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3m-7 0h8"/></svg>
                             <span class="tool-action-label">Delete</span>
@@ -122,7 +125,7 @@
         </div>
 
         <div class="print-selected-row">
-            <button type="submit" form="printSelectedForm" class="btn-primary">Print Selected Barcodes</button>
+            <button type="submit" form="printSelectedForm" id="printSelectedButton" class="btn-primary" disabled>Print Selected Barcodes</button>
         </div>
 
         <div class="pagination-wrap">
@@ -224,6 +227,74 @@ document.addEventListener('DOMContentLoaded', () => {
     const cancelBtn = document.getElementById('cancelAddToolModal');
     const selectAllCheckbox = document.getElementById('selectAllTools');
     const toolCheckboxes = Array.from(document.querySelectorAll('.tool-select-input'));
+    const printSelectedForm = document.getElementById('printSelectedForm');
+    const deleteSelectedForm = document.getElementById('deleteSelectedForm');
+    const printSelectedButton = document.getElementById('printSelectedButton');
+    const deleteSelectedButton = document.getElementById('deleteSelectedButton');
+    const selectedToolsCount = document.getElementById('selectedToolsCount');
+    const singleDeleteForms = Array.from(document.querySelectorAll('.single-delete-form'));
+
+    const showDeleteAlert = ({ title, text, confirmButtonText }) => {
+        if (!window.Swal) {
+            return Promise.resolve(window.confirm(text));
+        }
+
+        return window.Swal.fire({
+            title,
+            text,
+            icon: 'warning',
+            showCancelButton: true,
+            reverseButtons: true,
+            confirmButtonText,
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#dc2626',
+            cancelButtonColor: '#64748b',
+            focusCancel: true,
+        }).then((result) => result.isConfirmed);
+    };
+
+    const syncSelectedToolInputs = (form) => {
+        if (!form) {
+            return;
+        }
+
+        form.querySelectorAll('input[name="tool_ids"]').forEach((input) => input.remove());
+
+        toolCheckboxes
+            .filter((checkbox) => checkbox.checked)
+            .forEach((checkbox) => {
+                const hiddenInput = document.createElement('input');
+                hiddenInput.type = 'hidden';
+                hiddenInput.name = 'tool_ids';
+                hiddenInput.value = checkbox.value;
+                form.appendChild(hiddenInput);
+            });
+    };
+
+    const updateToolSelectionState = () => {
+        const selectedCount = toolCheckboxes.filter((checkbox) => checkbox.checked).length;
+        const hasSelection = selectedCount > 0;
+
+        if (selectedToolsCount) {
+            selectedToolsCount.textContent = `${selectedCount} selected`;
+        }
+
+        if (printSelectedButton) {
+            printSelectedButton.disabled = !hasSelection;
+        }
+
+        if (deleteSelectedButton) {
+            deleteSelectedButton.disabled = !hasSelection;
+        }
+
+        if (selectAllCheckbox) {
+            selectAllCheckbox.checked = hasSelection && selectedCount === toolCheckboxes.length;
+            selectAllCheckbox.indeterminate = hasSelection && selectedCount < toolCheckboxes.length;
+        }
+
+        syncSelectedToolInputs(printSelectedForm);
+        syncSelectedToolInputs(deleteSelectedForm);
+    };
 
     if (!modal || !openBtn) {
         return;
@@ -246,14 +317,54 @@ document.addEventListener('DOMContentLoaded', () => {
             toolCheckboxes.forEach((checkbox) => {
                 checkbox.checked = selectAllCheckbox.checked;
             });
+            updateToolSelectionState();
         });
 
         toolCheckboxes.forEach((checkbox) => {
-            checkbox.addEventListener('change', () => {
-                selectAllCheckbox.checked = toolCheckboxes.every((item) => item.checked);
+            checkbox.addEventListener('change', updateToolSelectionState);
+        });
+
+        updateToolSelectionState();
+    }
+
+    if (deleteSelectedForm) {
+        deleteSelectedForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const selectedCheckboxes = toolCheckboxes.filter((checkbox) => checkbox.checked);
+            if (!selectedCheckboxes.length) {
+                return;
+            }
+
+            const count = selectedCheckboxes.length;
+            const confirmed = await showDeleteAlert({
+                title: 'Delete selected tools?',
+                text: `You are about to delete ${count} selected tool(s). This cannot be undone.`,
+                confirmButtonText: 'Yes, delete them',
             });
+
+            if (confirmed) {
+                deleteSelectedForm.submit();
+            }
         });
     }
+
+    singleDeleteForms.forEach((form) => {
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const toolName = form.dataset.toolName || 'this tool';
+            const confirmed = await showDeleteAlert({
+                title: 'Delete tool?',
+                text: `You are about to delete ${toolName}. This cannot be undone.`,
+                confirmButtonText: 'Yes, delete it',
+            });
+
+            if (confirmed) {
+                form.submit();
+            }
+        });
+    });
 });
 </script>
 {% endblock %}

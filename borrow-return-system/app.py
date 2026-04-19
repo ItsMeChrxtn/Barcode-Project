@@ -511,6 +511,50 @@ def save_tool_image(file_storage):
     return generated_name
 
 
+def parse_tool_ids(raw_ids):
+    parsed_ids = []
+    seen_ids = set()
+
+    for raw_id in raw_ids:
+        try:
+            tool_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+
+        if tool_id in seen_ids:
+            continue
+
+        parsed_ids.append(tool_id)
+        seen_ids.add(tool_id)
+
+    return parsed_ids
+
+
+def split_deletable_tool_ids(db, tool_ids):
+    if not tool_ids:
+        return [], []
+
+    placeholders = ",".join("?" for _ in tool_ids)
+    rows = db.execute(
+        f"""
+        SELECT t.id, t.tool_name,
+               EXISTS(
+                   SELECT 1
+                   FROM transactions tr
+                   WHERE tr.tool_id = t.id AND tr.status = 'borrowed'
+               ) AS is_borrowed
+        FROM tools t
+        WHERE t.id IN ({placeholders})
+        """,
+        tool_ids,
+    ).fetchall()
+
+    borrowed_ids = {row["id"] for row in rows if row["is_borrowed"]}
+    deletable_ids = [tool_id for tool_id in tool_ids if tool_id not in borrowed_ids]
+    blocked_tools = [row for row in rows if row["is_borrowed"]]
+    return deletable_ids, blocked_tools
+
+
 def build_tool_filters(search, category, availability):
     where_clauses = ["1 = 1"]
     params = []
@@ -839,13 +883,7 @@ def tools():
 @login_required
 def print_selected_barcodes():
     db = get_db()
-    selected_ids = request.form.getlist("tool_ids")
-    valid_ids = []
-    for raw_id in selected_ids:
-        try:
-            valid_ids.append(int(raw_id))
-        except ValueError:
-            continue
+    valid_ids = parse_tool_ids(request.form.getlist("tool_ids"))
 
     if not valid_ids:
         flash("Select at least one tool barcode to print.", "warning")
@@ -1085,18 +1123,52 @@ def edit_tool(tool_id):
 @login_required
 def delete_tool(tool_id):
     db = get_db()
-    has_active_borrow = db.execute(
-        "SELECT id FROM transactions WHERE tool_id = ? AND status = 'borrowed' LIMIT 1",
-        (tool_id,),
-    ).fetchone()
-    if has_active_borrow:
+    deletable_ids, blocked_tools = split_deletable_tool_ids(db, [tool_id])
+    if blocked_tools:
         flash("Cannot delete tool while it is currently borrowed.", "danger")
+        return redirect(url_for("tools"))
+
+    if not deletable_ids:
+        flash("Tool not found.", "warning")
         return redirect(url_for("tools"))
 
     db.execute("DELETE FROM tools WHERE id = ?", (tool_id,))
     db.commit()
 
     flash("Tool deleted successfully.", "info")
+    return redirect(url_for("tools"))
+
+
+@app.route("/tools/delete-selected", methods=["POST"])
+@login_required
+def delete_selected_tools():
+    db = get_db()
+    selected_ids = parse_tool_ids(request.form.getlist("tool_ids"))
+
+    if not selected_ids:
+        flash("Select at least one tool to delete.", "warning")
+        return redirect(url_for("tools"))
+
+    deletable_ids, blocked_tools = split_deletable_tool_ids(db, selected_ids)
+
+    if deletable_ids:
+        placeholders = ",".join("?" for _ in deletable_ids)
+        db.execute(f"DELETE FROM tools WHERE id IN ({placeholders})", deletable_ids)
+        db.commit()
+        flash(f"Deleted {len(deletable_ids)} tool(s) successfully.", "info")
+
+    if blocked_tools:
+        blocked_names = ", ".join(row["tool_name"] for row in blocked_tools[:3])
+        if len(blocked_tools) > 3:
+            blocked_names += ", ..."
+        flash(
+            f"{len(blocked_tools)} tool(s) not deleted because they are currently borrowed: {blocked_names}",
+            "warning",
+        )
+
+    if not deletable_ids and not blocked_tools:
+        flash("No matching tools were found to delete.", "warning")
+
     return redirect(url_for("tools"))
 
 

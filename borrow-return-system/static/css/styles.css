@@ -202,8 +202,15 @@ body {
 .tools-toolbar-actions {
     display: flex;
     align-items: center;
-        min-width: 0;
+    min-width: 0;
+    gap: 0.55rem;
     flex-wrap: wrap;
+}
+
+.tools-selected-count {
+    font-size: 0.76rem;
+    color: var(--n-600);
+    font-weight: 600;
 }
 
 .select-all-toggle,
@@ -230,6 +237,8 @@ body {
     margin-top: 0.9rem;
     display: flex;
     justify-content: flex-end;
+    gap: 0.55rem;
+    flex-wrap: wrap;
 }
 
 .tool-card {
