@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+
+{% block title %}Edit Admin Profile | Borrow and Return Tool System{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-5">
+    <section class="hero-panel p-6 md:p-8 overflow-hidden">
+        <div class="max-w-3xl space-y-2 relative z-10">
+            <span class="eyebrow">Account Settings</span>
+            <h2 class="text-3xl md:text-4xl font-semibold text-white tracking-tight">Edit My Admin Details</h2>
+            <p class="text-emerald-50/85">Update your name, username, and optional password for your current account.</p>
+        </div>
+        <div class="hero-orb"></div>
+    </section>
+
+    <section class="surface-panel p-5 md:p-6 space-y-4">
+        <form method="post" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">First Name</label>
+                    <input type="text" name="first_name" value="{{ admin.first_name }}" class="input-field" required />
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Last Name</label>
+                    <input type="text" name="last_name" value="{{ admin.last_name }}" class="input-field" required />
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium mb-1">Username</label>
+                <input type="text" name="username" value="{{ admin.username }}" class="input-field" required />
+            </div>
+
+            <div class="pt-2 border-t border-slate-200">
+                <p class="text-sm text-slate-600 mb-3">Leave password fields blank if you do not want to change your password.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">New Password</label>
+                        <input id="editAdminNewPassword" type="password" name="new_password" class="input-field" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Confirm New Password</label>
+                        <input id="editAdminConfirmPassword" type="password" name="confirm_password" class="input-field" />
+                    </div>
+                </div>
+                <label class="inline-flex items-center gap-2 mt-3 text-sm text-slate-600 select-none">
+                    <input id="toggleEditAdminPassword" type="checkbox" class="accent-emerald-700" />
+                    <span>Show password</span>
+                </label>
+            </div>
+
+            <div class="flex gap-3 pt-2">
+                <button type="submit" class="btn-primary">Save Changes</button>
+                <a href="{{ url_for('admins') }}" class="btn-outline">Cancel</a>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const toggle = document.getElementById('toggleEditAdminPassword');
+        const password = document.getElementById('editAdminNewPassword');
+        const confirmPassword = document.getElementById('editAdminConfirmPassword');
+
+        if (!toggle || !password || !confirmPassword) {
+            return;
+        }
+
+        toggle.addEventListener('change', () => {
+            const nextType = toggle.checked ? 'text' : 'password';
+            password.type = nextType;
+            confirmPassword.type = nextType;
+        });
+    });
+</script>
+{% endblock %}

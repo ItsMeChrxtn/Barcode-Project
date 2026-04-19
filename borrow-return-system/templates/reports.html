@@ -13,8 +13,8 @@
                 <p class="text-emerald-50/85">Review borrowing patterns and current tool activity from one page.</p>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
-                <a href="{{ url_for('export_tools_csv') }}" class="btn-outline">Export Tools CSV</a>
-                <a href="{{ url_for('export_transactions_csv') }}" class="btn-outline">Export Transactions CSV</a>
+                <a href="{{ url_for('export_tools_csv', view='table') }}" class="btn-outline" target="_blank">Export Tools CSV (Table View)</a>
+                <a href="{{ url_for('export_transactions_csv', view='table') }}" class="btn-outline" target="_blank">Export Transactions CSV (Table View)</a>
                 <button onclick="window.print()" class="btn-primary">Print Report</button>
             </div>
         </div>

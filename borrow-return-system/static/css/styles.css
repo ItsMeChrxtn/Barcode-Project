@@ -526,6 +526,10 @@ body {
     padding: 1rem;
 }
 
+.add-tool-modal-panel {
+    width: min(620px, 100%);
+}
+
 .modal-head {
     display: flex;
     align-items: flex-start;
@@ -783,6 +787,26 @@ body {
         gap: 0.35rem;
     }
 
+    .modal-backdrop {
+        padding: 0.55rem;
+    }
+
+    .modal-panel {
+        width: min(640px, 100%);
+        border-radius: 0.75rem;
+        padding: 0.75rem;
+        max-height: calc(100vh - 1rem);
+    }
+
+    .add-tool-modal-panel {
+        width: min(520px, 100%);
+    }
+
+    .modal-head {
+        gap: 0.45rem;
+        margin-bottom: 0.55rem;
+    }
+
     .pagination-wrap {
         margin-top: 0.7rem;
         padding-top: 0.55rem;
@@ -848,6 +872,10 @@ body {
 
     .borrower-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .add-tool-modal-panel {
+        width: 100%;
     }
 }
 

@@ -41,6 +41,7 @@
             <div class="scan-panel panel-subtle">
                 <label id="barcodeLabel" class="scan-label">Scan Tool Barcode</label>
                 <input id="barcodeInput" data-barcode-input="true" type="text" name="barcode" class="input-field scan-input" placeholder="Ready for barcode scanner" />
+                <button id="manualSubmitButton" type="submit" class="btn-primary mt-3 w-full sm:w-auto">Submit Barcode</button>
                 <p id="barcodeHelp" class="scan-help">Scan the barcode to save the borrow transaction automatically.</p>
             </div>
         </form>
@@ -63,11 +64,11 @@
         const modeInput = document.getElementById('modeInput');
         const modeDescription = document.getElementById('modeDescription');
         const barcodeLabel = document.getElementById('barcodeLabel');
+        const manualSubmitButton = document.getElementById('manualSubmitButton');
         const barcodeHelp = document.getElementById('barcodeHelp');
         const borrowerFields = document.getElementById('borrowerFields');
         const resultBox = document.getElementById('scanResult');
         const modeButtons = document.querySelectorAll('[data-mode-button]');
-        let scanTimer = null;
         let isProcessing = false;
 
         function escapeHtml(value) {
@@ -97,6 +98,7 @@
                 rows.push(`<div><span class="font-semibold">Borrower:</span> ${escapeHtml(transaction.borrower_name)} (${escapeHtml(transaction.borrower_id)})</div>`);
                 rows.push(`<div><span class="font-semibold">Course / Department:</span> ${escapeHtml(transaction.course_department)}</div>`);
                 rows.push(`<div><span class="font-semibold">Contact Number:</span> ${escapeHtml(transaction.contact_number)}</div>`);
+                rows.push(`<div><span class="font-semibold">Lending Staff:</span> ${escapeHtml(transaction.lent_by_admin_name || 'Unknown')}</div>`);
                 rows.push(`<div><span class="font-semibold">Borrowed At:</span> ${escapeHtml(transaction.borrow_date)}</div>`);
                 if (transaction.return_date) {
                     rows.push(`<div><span class="font-semibold">Returned At:</span> ${escapeHtml(transaction.return_date)}</div>`);
@@ -111,12 +113,13 @@
             modeInput.value = mode;
             borrowerFields.classList.toggle('hidden', !borrowMode);
             barcodeLabel.textContent = borrowMode ? 'Scan Tool Barcode' : 'Scan Borrowed Tool Barcode';
+            manualSubmitButton.textContent = borrowMode ? 'Submit Borrow Barcode' : 'Submit Return Barcode';
             barcodeHelp.textContent = borrowMode
-                ? 'Scan the barcode to save the borrow transaction automatically.'
-                : 'Scan the borrowed tool barcode to save the return transaction automatically.';
+                ? 'Scan the barcode, or type it manually then press Enter or click Submit Borrow Barcode.'
+                : 'Scan the barcode, or type it manually then press Enter or click Submit Return Barcode.';
             modeDescription.textContent = borrowMode
-                ? 'Fill in the borrower details first, then scan the tool barcode to save the borrow record automatically.'
-                : 'Return mode only needs the barcode. Scan the borrowed tool and the system will save the return date automatically.';
+                ? 'Fill in the borrower details first, then scan or manually enter the tool barcode to save the borrow record.'
+                : 'Return mode only needs the barcode. Scan or manually enter the borrowed tool barcode and the system will save the return date automatically.';
 
             modeButtons.forEach((button) => {
                 const isActive = button.dataset.modeButton === mode;
@@ -177,20 +180,16 @@
             button.addEventListener('click', () => setMode(button.dataset.modeButton));
         });
 
+        form.addEventListener('submit', (event) => {
+            event.preventDefault();
+            processScan();
+        });
+
         barcodeInput.addEventListener('keydown', (event) => {
             if (event.key === 'Enter') {
                 event.preventDefault();
-                window.clearTimeout(scanTimer);
                 processScan();
             }
-        });
-
-        barcodeInput.addEventListener('input', () => {
-            window.clearTimeout(scanTimer);
-            if (barcodeInput.value.trim().length < 6) {
-                return;
-            }
-            scanTimer = window.setTimeout(processScan, 180);
         });
 
         setMode('borrow');

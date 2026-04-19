@@ -28,7 +28,7 @@
 
     <div class="bg-white rounded-2xl p-4 card-soft">
         <div class="flex justify-end mb-3">
-            <a href="{{ url_for('export_transactions_csv') }}" class="btn-outline">Export Transactions CSV</a>
+            <a href="{{ url_for('export_transactions_csv', view='table') }}" class="btn-outline" target="_blank">Export Transactions CSV (Table View)</a>
         </div>
         <div class="table-wrap">
             <table class="min-w-full text-sm">
@@ -36,6 +36,7 @@
                     <tr class="text-left border-b">
                         <th class="py-2 pr-3">Transaction ID</th>
                         <th class="py-2 pr-3">Borrower</th>
+                        <th class="py-2 pr-3">Lent By</th>
                         <th class="py-2 pr-3">Tool</th>
                         <th class="py-2 pr-3">Barcode</th>
                         <th class="py-2 pr-3">Borrow Date</th>
@@ -49,6 +50,7 @@
                     <tr class="border-b last:border-0">
                         <td class="py-2 pr-3">{{ tx.id }}</td>
                         <td class="py-2 pr-3">{{ tx.borrower_name }} ({{ tx.borrower_id }})</td>
+                        <td class="py-2 pr-3">{{ tx.lent_by_admin_name or '-' }}</td>
                         <td class="py-2 pr-3">{{ tx.tool_name }}</td>
                         <td class="py-2 pr-3">{{ tx.barcode }}</td>
                         <td class="py-2 pr-3">{{ tx.borrow_date }}</td>
@@ -60,7 +62,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="8" class="py-4 text-center text-slate-500">No transactions found.</td>
+                        <td colspan="9" class="py-4 text-center text-slate-500">No transactions found.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

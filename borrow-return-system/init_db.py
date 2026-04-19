@@ -14,6 +14,8 @@ def init_database():
         """
         CREATE TABLE IF NOT EXISTS admins (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            first_name TEXT NOT NULL DEFAULT '',
+            last_name TEXT NOT NULL DEFAULT '',
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL
         )
@@ -68,20 +70,36 @@ def init_database():
             borrow_date TEXT NOT NULL,
             expected_return_date TEXT NOT NULL,
             return_date TEXT,
+            lent_by_admin_id INTEGER,
             status TEXT NOT NULL,
             FOREIGN KEY (borrower_id) REFERENCES borrowers(id),
-            FOREIGN KEY (tool_id) REFERENCES tools(id)
+            FOREIGN KEY (tool_id) REFERENCES tools(id),
+            FOREIGN KEY (lent_by_admin_id) REFERENCES admins(id)
         )
         """
     )
+
+    cursor.execute("PRAGMA table_info(admins)")
+    admin_columns = {row[1] for row in cursor.fetchall()}
+    if "first_name" not in admin_columns:
+        cursor.execute("ALTER TABLE admins ADD COLUMN first_name TEXT DEFAULT ''")
+        cursor.execute("UPDATE admins SET first_name = username WHERE COALESCE(first_name, '') = ''")
+    if "last_name" not in admin_columns:
+        cursor.execute("ALTER TABLE admins ADD COLUMN last_name TEXT DEFAULT ''")
+        cursor.execute("UPDATE admins SET last_name = 'Admin' WHERE COALESCE(last_name, '') = ''")
+
+    cursor.execute("PRAGMA table_info(transactions)")
+    transaction_columns = {row[1] for row in cursor.fetchall()}
+    if "lent_by_admin_id" not in transaction_columns:
+        cursor.execute("ALTER TABLE transactions ADD COLUMN lent_by_admin_id INTEGER")
 
     cursor.execute("SELECT id FROM admins WHERE username = ?", ("admin",))
     admin_exists = cursor.fetchone()
 
     if not admin_exists:
         cursor.execute(
-            "INSERT INTO admins (username, password_hash) VALUES (?, ?)",
-            ("admin", generate_password_hash("admin123")),
+            "INSERT INTO admins (first_name, last_name, username, password_hash) VALUES (?, ?, ?, ?)",
+            ("System", "Admin", "admin", generate_password_hash("admin123")),
         )
         print("Default admin created: username=admin, password=admin123")
 

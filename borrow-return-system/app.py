@@ -78,6 +78,23 @@ def ensure_schema(db):
         db.execute("ALTER TABLE tools ADD COLUMN tool_image TEXT")
         db.commit()
 
+    admins_columns = db.execute("PRAGMA table_info(admins)").fetchall()
+    admin_column_names = {row["name"] for row in admins_columns}
+    if "first_name" not in admin_column_names:
+        db.execute("ALTER TABLE admins ADD COLUMN first_name TEXT DEFAULT ''")
+        db.execute("UPDATE admins SET first_name = username WHERE COALESCE(first_name, '') = ''")
+        db.commit()
+    if "last_name" not in admin_column_names:
+        db.execute("ALTER TABLE admins ADD COLUMN last_name TEXT DEFAULT ''")
+        db.execute("UPDATE admins SET last_name = 'Admin' WHERE COALESCE(last_name, '') = ''")
+        db.commit()
+
+    transactions_columns = db.execute("PRAGMA table_info(transactions)").fetchall()
+    transaction_column_names = {row["name"] for row in transactions_columns}
+    if "lent_by_admin_id" not in transaction_column_names:
+        db.execute("ALTER TABLE transactions ADD COLUMN lent_by_admin_id INTEGER")
+        db.commit()
+
 
 @app.teardown_appcontext
 def close_db(error=None):
@@ -176,7 +193,7 @@ def render_add_tool_page(db, generated_tool=None, form_data=None):
 
 def render_admins_page(db, form_data=None):
     admins = db.execute(
-        "SELECT id, username FROM admins ORDER BY username ASC"
+        "SELECT id, username, first_name, last_name FROM admins ORDER BY username ASC"
     ).fetchall()
     return render_template(
         "admins.html",
@@ -213,10 +230,12 @@ def get_active_borrow_transaction(db, barcode_value):
                tl.tool_name,
                tl.tool_code,
                tl.category,
-               t.barcode
+             t.barcode,
+             TRIM(COALESCE(a.first_name, '') || ' ' || COALESCE(a.last_name, '')) AS lent_by_admin_name
         FROM transactions t
         JOIN borrowers b ON b.id = t.borrower_id
         JOIN tools tl ON tl.id = t.tool_id
+         LEFT JOIN admins a ON a.id = t.lent_by_admin_id
         WHERE t.barcode = ? AND t.status = 'borrowed'
         ORDER BY t.borrow_date ASC, t.id ASC
         LIMIT 1
@@ -284,6 +303,7 @@ def build_transaction_payload(transaction):
         "tool_code": transaction["tool_code"],
         "category": transaction["category"],
         "barcode": transaction["barcode"],
+        "lent_by_admin_name": transaction["lent_by_admin_name"],
     }
 
 
@@ -331,14 +351,15 @@ def process_borrow_scan(db, payload):
         contact_number,
     )
     borrow_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lending_admin_id = session.get("admin_id")
 
     cursor = db.execute(
         """
         INSERT INTO transactions
-        (borrower_id, tool_id, barcode, borrow_date, expected_return_date, return_date, status)
-        VALUES (?, ?, ?, ?, ?, NULL, 'borrowed')
+        (borrower_id, tool_id, barcode, borrow_date, expected_return_date, return_date, status, lent_by_admin_id)
+        VALUES (?, ?, ?, ?, ?, NULL, 'borrowed', ?)
         """,
-        (borrower_id, tool["id"], barcode_value, borrow_timestamp, ""),
+        (borrower_id, tool["id"], barcode_value, borrow_timestamp, "", lending_admin_id),
     )
     db.execute(
         "UPDATE tools SET available_quantity = available_quantity - 1 WHERE id = ?",
@@ -363,10 +384,12 @@ def process_borrow_scan(db, payload):
                tl.tool_name,
                tl.tool_code,
                tl.category,
-               t.barcode
+             t.barcode,
+             TRIM(COALESCE(a.first_name, '') || ' ' || COALESCE(a.last_name, '')) AS lent_by_admin_name
         FROM transactions t
         JOIN borrowers b ON b.id = t.borrower_id
         JOIN tools tl ON tl.id = t.tool_id
+         LEFT JOIN admins a ON a.id = t.lent_by_admin_id
         WHERE t.id = ?
         """,
         (cursor.lastrowid,),
@@ -430,10 +453,12 @@ def process_return_scan(db, payload):
                tl.tool_name,
                tl.tool_code,
                tl.category,
-               t.barcode
+             t.barcode,
+             TRIM(COALESCE(a.first_name, '') || ' ' || COALESCE(a.last_name, '')) AS lent_by_admin_name
         FROM transactions t
         JOIN borrowers b ON b.id = t.borrower_id
         JOIN tools tl ON tl.id = t.tool_id
+         LEFT JOIN admins a ON a.id = t.lent_by_admin_id
         WHERE t.id = ?
         """,
         (active_transaction["id"],),
@@ -552,6 +577,7 @@ def login():
         session.clear()
         session["admin_id"] = admin["id"]
         session["admin_username"] = admin["username"]
+        session["admin_full_name"] = f"{admin['first_name']} {admin['last_name']}".strip()
         flash("Welcome back!", "success")
         return redirect(url_for("dashboard"))
 
@@ -572,13 +598,23 @@ def admins():
     db = get_db()
 
     if request.method == "POST":
+        first_name = request.form.get("first_name", "").strip()
+        last_name = request.form.get("last_name", "").strip()
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         confirm_password = request.form.get("confirm_password", "")
-        form_data = {"username": username}
+        form_data = {
+            "first_name": first_name,
+            "last_name": last_name,
+            "username": username,
+        }
 
-        if not username or not password or not confirm_password:
-            flash("Username, password, and confirmation are required.", "danger")
+        if not first_name or not last_name or not username or not password or not confirm_password:
+            flash("First name, last name, username, password, and confirmation are required.", "danger")
+            return render_admins_page(db, form_data=form_data)
+
+        if len(first_name) < 2 or len(last_name) < 2:
+            flash("First name and last name must be at least 2 characters long.", "danger")
             return render_admins_page(db, form_data=form_data)
 
         if len(username) < 3:
@@ -602,14 +638,101 @@ def admins():
             return render_admins_page(db, form_data=form_data)
 
         db.execute(
-            "INSERT INTO admins (username, password_hash) VALUES (?, ?)",
-            (username, generate_password_hash(password)),
+            "INSERT INTO admins (first_name, last_name, username, password_hash) VALUES (?, ?, ?, ?)",
+            (first_name, last_name, username, generate_password_hash(password)),
         )
         db.commit()
         flash("New admin account created successfully.", "success")
         return redirect(url_for("admins"))
 
     return render_admins_page(db)
+
+
+@app.route("/admins/<int:admin_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_admin(admin_id):
+    current_admin_id = session.get("admin_id")
+    if current_admin_id != admin_id:
+        flash("You can only edit your own account details.", "warning")
+        return redirect(url_for("edit_admin", admin_id=current_admin_id))
+
+    db = get_db()
+    admin = db.execute(
+        "SELECT id, first_name, last_name, username FROM admins WHERE id = ?",
+        (admin_id,),
+    ).fetchone()
+
+    if admin is None:
+        flash("Admin account not found.", "danger")
+        return redirect(url_for("admins"))
+
+    if request.method == "POST":
+        first_name = request.form.get("first_name", "").strip()
+        last_name = request.form.get("last_name", "").strip()
+        username = request.form.get("username", "").strip()
+        new_password = request.form.get("new_password", "")
+        confirm_password = request.form.get("confirm_password", "")
+
+        form_admin = {
+            "id": admin_id,
+            "first_name": first_name,
+            "last_name": last_name,
+            "username": username,
+        }
+
+        if not first_name or not last_name or not username:
+            flash("First name, last name, and username are required.", "danger")
+            return render_template("admin_edit.html", admin=form_admin)
+
+        if len(first_name) < 2 or len(last_name) < 2:
+            flash("First name and last name must be at least 2 characters long.", "danger")
+            return render_template("admin_edit.html", admin=form_admin)
+
+        if len(username) < 3:
+            flash("Username must be at least 3 characters long.", "danger")
+            return render_template("admin_edit.html", admin=form_admin)
+
+        duplicate_admin = db.execute(
+            "SELECT id FROM admins WHERE username = ? AND id != ?",
+            (username, admin_id),
+        ).fetchone()
+        if duplicate_admin is not None:
+            flash("That username is already in use.", "danger")
+            return render_template("admin_edit.html", admin=form_admin)
+
+        if new_password or confirm_password:
+            if len(new_password) < 6:
+                flash("New password must be at least 6 characters long.", "danger")
+                return render_template("admin_edit.html", admin=form_admin)
+            if new_password != confirm_password:
+                flash("Password confirmation does not match.", "danger")
+                return render_template("admin_edit.html", admin=form_admin)
+
+            db.execute(
+                """
+                UPDATE admins
+                SET first_name = ?, last_name = ?, username = ?, password_hash = ?
+                WHERE id = ?
+                """,
+                (first_name, last_name, username, generate_password_hash(new_password), admin_id),
+            )
+        else:
+            db.execute(
+                """
+                UPDATE admins
+                SET first_name = ?, last_name = ?, username = ?
+                WHERE id = ?
+                """,
+                (first_name, last_name, username, admin_id),
+            )
+
+        db.commit()
+        session["admin_username"] = username
+        session["admin_full_name"] = f"{first_name} {last_name}".strip()
+        flash("Your account details were updated successfully.", "success")
+        return redirect(url_for("admins"))
+
+    return render_template("admin_edit.html", admin=admin)
 
 
 @app.route("/dashboard")
@@ -1049,10 +1172,12 @@ def transactions():
                t.borrow_date,
                t.expected_return_date,
                t.return_date,
-               t.status
+               t.status,
+               TRIM(COALESCE(a.first_name, '') || ' ' || COALESCE(a.last_name, '')) AS lent_by_admin_name
         FROM transactions t
         JOIN borrowers b ON b.id = t.borrower_id
         JOIN tools tl ON tl.id = t.tool_id
+        LEFT JOIN admins a ON a.id = t.lent_by_admin_id
         WHERE 1 = 1
     """
     params = []
@@ -1065,10 +1190,12 @@ def transactions():
                 OR tl.tool_name LIKE ?
                 OR t.barcode LIKE ?
                 OR t.status LIKE ?
+                OR a.first_name LIKE ?
+                OR a.last_name LIKE ?
             )
         """
         wildcard = f"%{search}%"
-        params.extend([wildcard, wildcard, wildcard, wildcard, wildcard])
+        params.extend([wildcard, wildcard, wildcard, wildcard, wildcard, wildcard, wildcard])
 
     if status:
         query += " AND t.status = ?"
@@ -1181,11 +1308,50 @@ def export_tools_csv():
     tools = db.execute(
         """
         SELECT tool_name, tool_code, category, description, quantity,
-               available_quantity, barcode, status, date_added
+               available_quantity, barcode, barcode_image, status, date_added
         FROM tools
         ORDER BY id DESC
         """
     ).fetchall()
+
+    view_mode = request.args.get("view", "csv").strip().lower()
+    if view_mode == "table":
+        headers = [
+            "Tool Name",
+            "Tool Code",
+            "Category",
+            "Description",
+            "Quantity",
+            "Available Quantity",
+            "Barcode",
+            "Barcode Image",
+            "Status",
+            "Date Added",
+        ]
+        table_rows = [
+            [
+                row["tool_name"],
+                row["tool_code"],
+                row["category"],
+                row["description"],
+                row["quantity"],
+                row["available_quantity"],
+                row["barcode"],
+                row["barcode_image"],
+                row["status"],
+                row["date_added"],
+            ]
+            for row in tools
+        ]
+        return render_template(
+            "export_table.html",
+            title="Tools Export (Printable Table)",
+            filename="tools_export.csv",
+            headers=headers,
+            rows=table_rows,
+            generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            csv_download_url=url_for("export_tools_csv"),
+        )
 
     output = StringIO()
     writer = csv.writer(output)
@@ -1244,13 +1410,54 @@ def export_transactions_csv():
                t.borrow_date,
                t.expected_return_date,
                t.return_date,
-               t.status
+               t.status,
+               TRIM(COALESCE(a.first_name, '') || ' ' || COALESCE(a.last_name, '')) AS lent_by_admin_name
         FROM transactions t
         JOIN borrowers b ON b.id = t.borrower_id
         JOIN tools tl ON tl.id = t.tool_id
+        LEFT JOIN admins a ON a.id = t.lent_by_admin_id
         ORDER BY t.id DESC
         """
     ).fetchall()
+
+    view_mode = request.args.get("view", "csv").strip().lower()
+    if view_mode == "table":
+        headers = [
+            "Transaction ID",
+            "Borrower Name",
+            "Borrower ID",
+            "Tool Name",
+            "Barcode",
+            "Borrow Date",
+            "Expected Return Date",
+            "Return Date",
+            "Status",
+            "Lent By",
+        ]
+        table_rows = [
+            [
+                row["id"],
+                row["borrower_name"],
+                row["borrower_id"],
+                row["tool_name"],
+                row["barcode"],
+                row["borrow_date"],
+                row["expected_return_date"],
+                row["return_date"],
+                row["status"],
+                row["lent_by_admin_name"],
+            ]
+            for row in rows
+        ]
+        return render_template(
+            "export_table.html",
+            title="Transactions Export (Printable Table)",
+            filename="transactions_export.csv",
+            headers=headers,
+            rows=table_rows,
+            generated_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            csv_download_url=url_for("export_transactions_csv"),
+        )
 
     output = StringIO()
     writer = csv.writer(output)
@@ -1265,6 +1472,7 @@ def export_transactions_csv():
             "Expected Return Date",
             "Return Date",
             "Status",
+            "Lent By",
         ]
     )
 
@@ -1280,6 +1488,7 @@ def export_transactions_csv():
                 row["expected_return_date"],
                 row["return_date"],
                 row["status"],
+                row["lent_by_admin_name"],
             ]
         )
 
@@ -1343,10 +1552,12 @@ def api_borrowed_by_barcode(barcode):
                tl.tool_name,
                tl.tool_code,
                tl.category,
-               t.barcode
+             t.barcode,
+             TRIM(COALESCE(a.first_name, '') || ' ' || COALESCE(a.last_name, '')) AS lent_by_admin_name
         FROM transactions t
         JOIN borrowers b ON b.id = t.borrower_id
         JOIN tools tl ON tl.id = t.tool_id
+         LEFT JOIN admins a ON a.id = t.lent_by_admin_id
         WHERE t.barcode = ? AND t.status = 'borrowed'
         ORDER BY t.borrow_date ASC, t.id ASC
         LIMIT 1
@@ -1378,6 +1589,7 @@ def api_borrowed_by_barcode(barcode):
             "tool_code": row["tool_code"],
             "category": row["category"],
             "barcode": row["barcode"],
+            "lent_by_admin_name": row["lent_by_admin_name"],
         },
     }
 

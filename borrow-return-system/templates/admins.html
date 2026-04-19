@@ -28,14 +28,17 @@
                     <thead>
                         <tr>
                             <th class="py-3 pr-3">ID</th>
+                            <th class="py-3 pr-3">Name</th>
                             <th class="py-3 pr-3">Username</th>
                             <th class="py-3 pr-3">Status</th>
+                            <th class="py-3 pr-3">Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for admin in admins %}
                         <tr>
                             <td class="py-3 pr-3">{{ admin.id }}</td>
+                            <td class="py-3 pr-3 font-medium text-slate-900">{{ admin.first_name }} {{ admin.last_name }}</td>
                             <td class="py-3 pr-3 font-medium text-slate-900">{{ admin.username }}</td>
                             <td class="py-3 pr-3">
                                 {% if admin.id == session.get('admin_id') %}
@@ -44,10 +47,17 @@
                                 <span class="badge bg-slate-100 text-slate-700">Active</span>
                                 {% endif %}
                             </td>
+                            <td class="py-3 pr-3">
+                                {% if admin.id == session.get('admin_id') %}
+                                <a href="{{ url_for('edit_admin', admin_id=admin.id) }}" class="btn-outline text-xs px-3 py-1">Edit My Details</a>
+                                {% else %}
+                                <span class="text-xs text-slate-400">Own account only</span>
+                                {% endif %}
+                            </td>
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="3" class="py-4 text-center text-slate-500">No admin accounts found.</td>
+                            <td colspan="5" class="py-4 text-center text-slate-500">No admin accounts found.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -62,21 +72,55 @@
             </div>
 
             <form method="post" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">First Name</label>
+                        <input type="text" name="first_name" value="{{ form_data.get('first_name', '') }}" class="input-field" required />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Last Name</label>
+                        <input type="text" name="last_name" value="{{ form_data.get('last_name', '') }}" class="input-field" required />
+                    </div>
+                </div>
                 <div>
                     <label class="block text-sm font-medium mb-1">Username</label>
                     <input type="text" name="username" value="{{ form_data.get('username', '') }}" class="input-field" required />
                 </div>
                 <div>
                     <label class="block text-sm font-medium mb-1">Password</label>
-                    <input type="password" name="password" class="input-field" required />
+                    <input id="createAdminPassword" type="password" name="password" class="input-field" required />
                 </div>
                 <div>
                     <label class="block text-sm font-medium mb-1">Confirm Password</label>
-                    <input type="password" name="confirm_password" class="input-field" required />
+                    <input id="createAdminConfirmPassword" type="password" name="confirm_password" class="input-field" required />
                 </div>
+                <label class="inline-flex items-center gap-2 text-sm text-slate-600 select-none">
+                    <input id="toggleCreateAdminPassword" type="checkbox" class="accent-emerald-700" />
+                    <span>Show password</span>
+                </label>
                 <button type="submit" class="btn-primary w-full">Create Admin Account</button>
             </form>
         </section>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const toggle = document.getElementById('toggleCreateAdminPassword');
+        const password = document.getElementById('createAdminPassword');
+        const confirmPassword = document.getElementById('createAdminConfirmPassword');
+
+        if (!toggle || !password || !confirmPassword) {
+            return;
+        }
+
+        toggle.addEventListener('change', () => {
+            const nextType = toggle.checked ? 'text' : 'password';
+            password.type = nextType;
+            confirmPassword.type = nextType;
+        });
+    });
+</script>
 {% endblock %}
