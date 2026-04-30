@@ -620,9 +620,6 @@ def build_tool_filters(search, category, availability):
 
 @app.route("/")
 def index():
-    if session.get("admin_id"):
-        return redirect(url_for("dashboard"))
-
     return render_template("landing.html", profiles=get_project_profiles())
 
 
