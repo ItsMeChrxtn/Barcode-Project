@@ -15,6 +15,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_from_directory,
     session,
     url_for,
 )
@@ -28,6 +29,7 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 DATABASE_PATH = os.path.join(BASE_DIR, "database.db")
 BARCODE_DIR = os.path.join(BASE_DIR, "static", "barcodes")
 TOOL_IMAGE_DIR = os.path.join(BASE_DIR, "static", "tool_images")
+TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 TOOL_CODE_PREFIX = "TL-"
 CATEGORY_OPTIONS = [
     "Hand Tools",
@@ -311,6 +313,36 @@ def rows_to_dicts(rows):
     return [dict(row) for row in rows]
 
 
+def get_project_profiles():
+    return [
+        {
+            "name": "BERTOLDO, Restygie D.",
+            "role": "Proponent",
+            "image": "BERTOLDO, Restygie D..jpg",
+        },
+        {
+            "name": "CASTUERAS, Rhenard R.",
+            "role": "Proponent",
+            "image": "CASTUERAS, Rhenard R..jpg",
+        },
+        {
+            "name": "VEDAD, Kim Jay C.",
+            "role": "Proponent",
+            "image": "VEDAD, Kim Jay C..jpg",
+        },
+        {
+            "name": "Nicky Jay R. Evangelista",
+            "role": "Adviser",
+            "image": "Nicky Jay R. Evangelista - Adviser.jpg",
+        },
+        {
+            "name": "Diane P. Arayata",
+            "role": "Technical Critic",
+            "image": "Diane P. Arayata - Technical critic.jpg",
+        },
+    ]
+
+
 def process_borrow_scan(db, payload):
     barcode_value = payload.get("barcode", "").strip()
     borrower_name = payload.get("borrower_name", "").strip()
@@ -590,7 +622,18 @@ def build_tool_filters(search, category, availability):
 def index():
     if session.get("admin_id"):
         return redirect(url_for("dashboard"))
-    return redirect(url_for("login"))
+
+    return render_template("landing.html", profiles=get_project_profiles())
+
+
+@app.route("/title-page")
+def title_page():
+    return render_template("landing.html", profiles=get_project_profiles())
+
+
+@app.route("/template-image/<path:filename>")
+def template_image(filename):
+    return send_from_directory(TEMPLATE_DIR, filename)
 
 
 @app.route("/healthz")
