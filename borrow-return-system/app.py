@@ -71,7 +71,60 @@ def get_db():
 
 
 def ensure_schema(db):
-    # Keep backward compatibility for existing local databases.
+    # Create tables if they don't exist yet (fresh deployment).
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS admins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            first_name TEXT NOT NULL DEFAULT '',
+            last_name TEXT NOT NULL DEFAULT '',
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL
+        )
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS tools (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tool_name TEXT NOT NULL,
+            tool_code TEXT NOT NULL UNIQUE,
+            category TEXT NOT NULL,
+            description TEXT,
+            quantity INTEGER NOT NULL DEFAULT 0,
+            available_quantity INTEGER NOT NULL DEFAULT 0,
+            barcode TEXT NOT NULL UNIQUE,
+            barcode_image TEXT,
+            tool_image TEXT,
+            status TEXT NOT NULL DEFAULT 'Available',
+            date_added TEXT NOT NULL
+        )
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS borrowers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            borrower_name TEXT NOT NULL,
+            borrower_id TEXT NOT NULL UNIQUE,
+            course_department TEXT NOT NULL,
+            contact_number TEXT NOT NULL
+        )
+    """)
+    db.execute("""
+        CREATE TABLE IF NOT EXISTS transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            borrower_id INTEGER NOT NULL,
+            tool_id INTEGER NOT NULL,
+            barcode TEXT NOT NULL,
+            borrow_date TEXT NOT NULL,
+            expected_return_date TEXT NOT NULL,
+            return_date TEXT,
+            lent_by_admin_id INTEGER,
+            status TEXT NOT NULL,
+            FOREIGN KEY (borrower_id) REFERENCES borrowers(id),
+            FOREIGN KEY (tool_id) REFERENCES tools(id),
+            FOREIGN KEY (lent_by_admin_id) REFERENCES admins(id)
+        )
+    """)
+    db.commit()
+
+    # Migrate existing databases that may be missing newer columns.
     tools_columns = db.execute("PRAGMA table_info(tools)").fetchall()
     column_names = {row["name"] for row in tools_columns}
     if "barcode_image" not in column_names:
