@@ -151,6 +151,15 @@ def ensure_schema(db):
         db.execute("ALTER TABLE transactions ADD COLUMN lent_by_admin_id INTEGER")
         db.commit()
 
+    # Seed default admin if no admins exist yet (fresh deployment).
+    admin_exists = db.execute("SELECT id FROM admins WHERE username = 'admin'").fetchone()
+    if not admin_exists:
+        db.execute(
+            "INSERT INTO admins (first_name, last_name, username, password_hash) VALUES (?, ?, ?, ?)",
+            ("System", "Admin", "admin", generate_password_hash("admin123")),
+        )
+        db.commit()
+
 
 @app.teardown_appcontext
 def close_db(error=None):
