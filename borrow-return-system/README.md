@@ -53,6 +53,7 @@ borrow-return-system/
   seed_data.py
   database.db
   requirements.txt
+  RUN_APP_PI.sh
   run.sh
   launch_system.sh
   BorrowReturnSystem.desktop
@@ -103,7 +104,10 @@ Place the project in a path like:
 
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-venv python3-pip chromium-browser
+sudo apt install -y python3 python3-venv python3-pip curl
+
+# Install Chromium (command may be chromium-browser or chromium depending on OS image)
+sudo apt install -y chromium-browser || sudo apt install -y chromium
 ```
 
 ### 3. Make Scripts Executable
@@ -112,19 +116,28 @@ sudo apt install -y python3 python3-venv python3-pip chromium-browser
 cd /home/pi/borrow-return-system
 chmod +x run.sh
 chmod +x launch_system.sh
+chmod +x RUN_APP_PI.sh
 ```
 
 ### 4. Launch Like Desktop Software
 
 ```bash
-./launch_system.sh
+./RUN_APP_PI.sh
 ```
 
 What happens:
-1. Starts Flask app in background (`run.sh`)
-2. Waits a few seconds
+1. Starts Flask app in background via `run.sh` (if not already running)
+2. Waits until `/healthz` is ready (up to about 45 seconds)
 3. Opens Chromium at `http://127.0.0.1:5000`
-4. Uses fullscreen app-style window
+4. Uses app-style window
+
+Important:
+- `RUN_APP.bat` is for Windows only.
+- Raspberry Pi 5 must use `RUN_APP_PI.sh`.
+
+Notes:
+- First launch on Raspberry Pi can be slower because venv and Python packages are prepared.
+- Next launches are faster because dependencies are cached in `.venv`.
 
 ## Desktop Icon Setup
 

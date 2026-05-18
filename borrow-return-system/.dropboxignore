@@ -1,0 +1,12 @@
+# Prevent Dropbox from syncing the SQLite database file.
+# Syncing database.db across devices causes data loss because Dropbox
+# can overwrite a live database with an older synced version.
+# Keep the database local to each device.
+database.db
+database.db-journal
+database.db-wal
+database.db-shm
+
+# Also exclude the Python virtual environment - it is large, platform-specific,
+# and can be recreated by running RUN_APP.bat or RUN_APP_PI.sh.
+.venv/

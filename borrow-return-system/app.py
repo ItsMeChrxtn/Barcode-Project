@@ -1,9 +1,10 @@
 import csv
+import ntplib
 import os
 import random
 import sqlite3
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timezone, timedelta
 from functools import wraps
 from io import StringIO
 
@@ -311,6 +312,17 @@ def build_transaction_payload(transaction):
 
 def rows_to_dicts(rows):
     return [dict(row) for row in rows]
+
+
+def get_ntp_now():
+    """Return current datetime synced from NTP. Falls back to local time if NTP unreachable."""
+    try:
+        c = ntplib.NTPClient()
+        response = c.request("pool.ntp.org", version=3, timeout=2)
+        # Convert NTP timestamp to local datetime
+        return datetime.fromtimestamp(response.tx_time)
+    except Exception:
+        return datetime.now()
 
 
 def get_project_profiles():
@@ -1162,53 +1174,16 @@ def edit_tool(tool_id):
 @app.route("/tools/<int:tool_id>/delete", methods=["POST"])
 @login_required
 def delete_tool(tool_id):
-    db = get_db()
-    deletable_ids, blocked_tools = split_deletable_tool_ids(db, [tool_id])
-    if blocked_tools:
-        flash("Cannot delete tool while it is currently borrowed.", "danger")
-        return redirect(url_for("tools"))
-
-    if not deletable_ids:
-        flash("Tool not found.", "warning")
-        return redirect(url_for("tools"))
-
-    db.execute("DELETE FROM tools WHERE id = ?", (tool_id,))
-    db.commit()
-
-    flash("Tool deleted successfully.", "info")
+    _ = tool_id
+    flash("Tool deletion is disabled to preserve inventory history.", "warning")
     return redirect(url_for("tools"))
 
 
 @app.route("/tools/delete-selected", methods=["POST"])
 @login_required
 def delete_selected_tools():
-    db = get_db()
-    selected_ids = parse_tool_ids(request.form.getlist("tool_ids"))
-
-    if not selected_ids:
-        flash("Select at least one tool to delete.", "warning")
-        return redirect(url_for("tools"))
-
-    deletable_ids, blocked_tools = split_deletable_tool_ids(db, selected_ids)
-
-    if deletable_ids:
-        placeholders = ",".join("?" for _ in deletable_ids)
-        db.execute(f"DELETE FROM tools WHERE id IN ({placeholders})", deletable_ids)
-        db.commit()
-        flash(f"Deleted {len(deletable_ids)} tool(s) successfully.", "info")
-
-    if blocked_tools:
-        blocked_names = ", ".join(row["tool_name"] for row in blocked_tools[:3])
-        if len(blocked_tools) > 3:
-            blocked_names += ", ..."
-        flash(
-            f"{len(blocked_tools)} tool(s) not deleted because they are currently borrowed: {blocked_names}",
-            "warning",
-        )
-
-    if not deletable_ids and not blocked_tools:
-        flash("No matching tools were found to delete.", "warning")
-
+    _ = request.form.getlist("tool_ids")
+    flash("Bulk tool deletion is disabled to preserve inventory history.", "warning")
     return redirect(url_for("tools"))
 
 
