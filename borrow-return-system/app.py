@@ -1,13 +1,13 @@
-import csv
+﻿import csv
 import ntplib
 import os
 import random
-import sqlite3
 import uuid
 from datetime import datetime, date, timezone, timedelta
 from functools import wraps
 from io import StringIO
 
+from bson import ObjectId
 from flask import (
     Flask,
     Response,
@@ -23,11 +23,11 @@ from flask import (
 import barcode
 from barcode.writer import ImageWriter
 from flask_cors import CORS
+from pymongo import MongoClient, ReturnDocument, ASCENDING, DESCENDING
 from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DATABASE_PATH = os.path.join(BASE_DIR, "database.db")
 BARCODE_DIR = os.path.join(BASE_DIR, "static", "barcodes")
 TOOL_IMAGE_DIR = os.path.join(BASE_DIR, "static", "tool_images")
 TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
@@ -61,182 +61,134 @@ cors_origins = parse_cors_origins(os.environ.get("CORS_ALLOWED_ORIGINS", ""))
 if cors_origins:
     CORS(app, resources={r"/api/*": {"origins": cors_origins}}, supports_credentials=True)
 
+# ---------------------------------------------------------------------------
+# MongoDB connection
+# ---------------------------------------------------------------------------
+
+_mongo_client = None
+_indexes_ready = False
+
+
+def get_mongo_client():
+    global _mongo_client
+    if _mongo_client is None:
+        uri = os.environ.get("MONGODB_URI", "mongodb://localhost:27017")
+        _mongo_client = MongoClient(uri)
+    return _mongo_client
+
 
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DATABASE_PATH)
-        g.db.row_factory = sqlite3.Row
-        ensure_schema(g.db)
+        client = get_mongo_client()
+        db_name = os.environ.get("MONGODB_DB", "borrow_return_db")
+        g.db = client[db_name]
+        _ensure_ready(g.db)
     return g.db
 
 
-def ensure_schema(db):
-    # Create tables if they don't exist yet (fresh deployment).
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS admins (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            first_name TEXT NOT NULL DEFAULT '',
-            last_name TEXT NOT NULL DEFAULT '',
-            username TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL
-        )
-    """)
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS tools (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tool_name TEXT NOT NULL,
-            tool_code TEXT NOT NULL UNIQUE,
-            category TEXT NOT NULL,
-            description TEXT,
-            quantity INTEGER NOT NULL DEFAULT 0,
-            available_quantity INTEGER NOT NULL DEFAULT 0,
-            barcode TEXT NOT NULL UNIQUE,
-            barcode_image TEXT,
-            tool_image TEXT,
-            status TEXT NOT NULL DEFAULT 'Available',
-            date_added TEXT NOT NULL
-        )
-    """)
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS borrowers (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            borrower_name TEXT NOT NULL,
-            borrower_id TEXT NOT NULL UNIQUE,
-            course_department TEXT NOT NULL,
-            contact_number TEXT NOT NULL
-        )
-    """)
-    db.execute("""
-        CREATE TABLE IF NOT EXISTS transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            borrower_id INTEGER NOT NULL,
-            tool_id INTEGER NOT NULL,
-            barcode TEXT NOT NULL,
-            borrow_date TEXT NOT NULL,
-            expected_return_date TEXT NOT NULL,
-            return_date TEXT,
-            lent_by_admin_id INTEGER,
-            status TEXT NOT NULL,
-            FOREIGN KEY (borrower_id) REFERENCES borrowers(id),
-            FOREIGN KEY (tool_id) REFERENCES tools(id),
-            FOREIGN KEY (lent_by_admin_id) REFERENCES admins(id)
-        )
-    """)
-    db.commit()
-
-    # Migrate existing databases that may be missing newer columns.
-    tools_columns = db.execute("PRAGMA table_info(tools)").fetchall()
-    column_names = {row["name"] for row in tools_columns}
-    if "barcode_image" not in column_names:
-        db.execute("ALTER TABLE tools ADD COLUMN barcode_image TEXT")
-        db.commit()
-    if "tool_image" not in column_names:
-        db.execute("ALTER TABLE tools ADD COLUMN tool_image TEXT")
-        db.commit()
-
-    admins_columns = db.execute("PRAGMA table_info(admins)").fetchall()
-    admin_column_names = {row["name"] for row in admins_columns}
-    if "first_name" not in admin_column_names:
-        db.execute("ALTER TABLE admins ADD COLUMN first_name TEXT DEFAULT ''")
-        db.execute("UPDATE admins SET first_name = username WHERE COALESCE(first_name, '') = ''")
-        db.commit()
-    if "last_name" not in admin_column_names:
-        db.execute("ALTER TABLE admins ADD COLUMN last_name TEXT DEFAULT ''")
-        db.execute("UPDATE admins SET last_name = 'Admin' WHERE COALESCE(last_name, '') = ''")
-        db.commit()
-
-    transactions_columns = db.execute("PRAGMA table_info(transactions)").fetchall()
-    transaction_column_names = {row["name"] for row in transactions_columns}
-    if "lent_by_admin_id" not in transaction_column_names:
-        db.execute("ALTER TABLE transactions ADD COLUMN lent_by_admin_id INTEGER")
-        db.commit()
-
-    # Seed default admin if no admins exist yet (fresh deployment).
-    admin_exists = db.execute("SELECT id FROM admins WHERE username = 'admin'").fetchone()
-    if not admin_exists:
-        db.execute(
-            "INSERT INTO admins (first_name, last_name, username, password_hash) VALUES (?, ?, ?, ?)",
-            ("System", "Admin", "admin", generate_password_hash("admin123")),
-        )
-        db.commit()
+def _ensure_ready(db):
+    global _indexes_ready
+    if _indexes_ready:
+        return
+    db.admins.create_index("username", unique=True)
+    db.tools.create_index("tool_code", unique=True)
+    db.tools.create_index("barcode", unique=True)
+    db.borrowers.create_index("borrower_id", unique=True)
+    if db.admins.find_one({"username": "admin"}) is None:
+        db.admins.insert_one({
+            "first_name": "System",
+            "last_name": "Admin",
+            "username": "admin",
+            "password_hash": generate_password_hash("admin123"),
+        })
+    _indexes_ready = True
 
 
 @app.teardown_appcontext
 def close_db(error=None):
     _ = error
-    db = g.pop("db", None)
-    if db is not None:
-        db.close()
+    g.pop("db", None)
 
+
+# ---------------------------------------------------------------------------
+# MongoDB document helpers
+# ---------------------------------------------------------------------------
+
+def to_doc(d):
+    if d is None:
+        return None
+    d = dict(d)
+    if "_id" in d:
+        d["id"] = str(d.pop("_id"))
+    return d
+
+
+def to_docs(cursor):
+    return [to_doc(d) for d in cursor]
+
+
+def to_oid(s):
+    try:
+        return ObjectId(str(s))
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
 
 def login_required(view_func):
     @wraps(view_func)
     def wrapped_view(*args, **kwargs):
-        if session.get("admin_id") is None:
+        if not session.get("admin_id"):
             flash("Please log in to continue.", "warning")
             return redirect(url_for("login"))
         return view_func(*args, **kwargs)
-
     return wrapped_view
 
 
-def normalize_tool_status(tool_row):
-    return "Available" if tool_row["available_quantity"] > 0 else "Unavailable"
+# ---------------------------------------------------------------------------
+# Tool helpers
+# ---------------------------------------------------------------------------
+
+def normalize_tool_status(tool):
+    return "Available" if tool.get("available_quantity", 0) > 0 else "Unavailable"
 
 
 def update_tool_status(db, tool_id):
-    tool = db.execute("SELECT id, quantity, available_quantity FROM tools WHERE id = ?", (tool_id,)).fetchone()
+    oid = to_oid(tool_id)
+    if not oid:
+        return
+    tool = db.tools.find_one({"_id": oid})
     if not tool:
         return
     available_qty = max(0, min(tool["available_quantity"], tool["quantity"]))
     status = "Available" if available_qty > 0 else "Unavailable"
-    db.execute(
-        "UPDATE tools SET available_quantity = ?, status = ? WHERE id = ?",
-        (available_qty, status, tool_id),
+    db.tools.update_one(
+        {"_id": oid},
+        {"$set": {"available_quantity": available_qty, "status": status}},
     )
 
 
-def parse_date_input(value):
-    if not value:
-        return None
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").date()
-    except ValueError:
-        return None
-
-
-def generate_next_tool_code(db):
-    tool_codes = db.execute(
-        "SELECT tool_code FROM tools WHERE tool_code LIKE ?",
-        (f"{TOOL_CODE_PREFIX}%",),
-    ).fetchall()
-
-    max_number = -1
-    for row in tool_codes:
-        suffix = row["tool_code"][len(TOOL_CODE_PREFIX) :]
-        if suffix.isdigit():
-            max_number = max(max_number, int(suffix))
-
-    return f"{TOOL_CODE_PREFIX}{max_number + 1:03d}"
-
-
 def get_next_tool_number(db):
-    tool_codes = db.execute(
-        "SELECT tool_code FROM tools WHERE tool_code LIKE ?",
-        (f"{TOOL_CODE_PREFIX}%",),
-    ).fetchall()
-
-    max_number = -1
-    for row in tool_codes:
-        suffix = row["tool_code"][len(TOOL_CODE_PREFIX) :]
-        if suffix.isdigit():
-            max_number = max(max_number, int(suffix))
-
-    return max_number + 1
+    pipeline = [
+        {"$match": {"tool_code": {"$regex": f"^{TOOL_CODE_PREFIX}\\d+$"}}},
+        {"$project": {"num": {"$toInt": {"$substrCP": ["$tool_code", len(TOOL_CODE_PREFIX), 10]}}}},
+        {"$group": {"_id": None, "max_num": {"$max": "$num"}}},
+    ]
+    result = list(db.tools.aggregate(pipeline))
+    if result and result[0].get("max_num") is not None:
+        return result[0]["max_num"] + 1
+    return 0
 
 
 def format_tool_code(number):
     return f"{TOOL_CODE_PREFIX}{number:03d}"
+
+
+def generate_next_tool_code(db):
+    return format_tool_code(get_next_tool_number(db))
 
 
 def get_category_options(selected_category=None):
@@ -246,95 +198,40 @@ def get_category_options(selected_category=None):
     return options
 
 
-def render_add_tool_page(db, generated_tool=None, form_data=None):
-    return render_template(
-        "add_tool.html",
-        generated_tool=generated_tool,
-        next_tool_code=generate_next_tool_code(db),
-        category_options=get_category_options((form_data or {}).get("category")),
-        form_data=form_data or {},
-    )
+def generate_unique_barcode(db, length=12):
+    while True:
+        value = "".join(str(random.randint(0, 9)) for _ in range(length))
+        if db.tools.find_one({"barcode": value}) is None:
+            return value
 
 
-def render_admins_page(db, form_data=None):
-    admins = db.execute(
-        "SELECT id, username, first_name, last_name FROM admins ORDER BY username ASC"
-    ).fetchall()
-    return render_template(
-        "admins.html",
-        admins=admins,
-        form_data=form_data or {},
-    )
+def create_barcode_image(barcode_value):
+    os.makedirs(BARCODE_DIR, exist_ok=True)
+    file_stem = f"barcode_{barcode_value}"
+    path_without_ext = os.path.join(BARCODE_DIR, file_stem)
+    code128 = barcode.get("code128", barcode_value, writer=ImageWriter())
+    generated_path = code128.save(path_without_ext)
+    return os.path.basename(generated_path)
+
+
+def save_tool_image(file_storage):
+    if file_storage is None or not getattr(file_storage, "filename", ""):
+        return None
+    filename = secure_filename(file_storage.filename)
+    if not filename or "." not in filename:
+        return None
+    extension = filename.rsplit(".", 1)[1].lower()
+    if extension not in {"png", "jpg", "jpeg", "webp"}:
+        return None
+    os.makedirs(TOOL_IMAGE_DIR, exist_ok=True)
+    generated_name = f"tool_{uuid.uuid4().hex[:12]}.{extension}"
+    save_path = os.path.join(TOOL_IMAGE_DIR, generated_name)
+    file_storage.save(save_path)
+    return generated_name
 
 
 def get_tool_by_barcode(db, barcode_value):
-    return db.execute(
-        """
-        SELECT id, tool_name, tool_code, category, description, quantity,
-               available_quantity, barcode, barcode_image, tool_image, status
-        FROM tools
-        WHERE barcode = ?
-        """,
-        (barcode_value.strip(),),
-    ).fetchone()
-
-
-def get_active_borrow_transaction(db, barcode_value):
-    return db.execute(
-        """
-        SELECT t.id,
-               t.borrow_date,
-               t.expected_return_date,
-               t.return_date,
-               t.status,
-               b.borrower_name,
-               b.borrower_id,
-               b.course_department,
-               b.contact_number,
-               tl.id AS tool_id,
-               tl.tool_name,
-               tl.tool_code,
-               tl.category,
-             t.barcode,
-             TRIM(COALESCE(a.first_name, '') || ' ' || COALESCE(a.last_name, '')) AS lent_by_admin_name
-        FROM transactions t
-        JOIN borrowers b ON b.id = t.borrower_id
-        JOIN tools tl ON tl.id = t.tool_id
-         LEFT JOIN admins a ON a.id = t.lent_by_admin_id
-        WHERE t.barcode = ? AND t.status = 'borrowed'
-        ORDER BY t.borrow_date ASC, t.id ASC
-        LIMIT 1
-        """,
-        (barcode_value.strip(),),
-    ).fetchone()
-
-
-def upsert_borrower(db, borrower_name, borrower_code, course_department, contact_number):
-    borrower = db.execute(
-        "SELECT id FROM borrowers WHERE borrower_id = ?",
-        (borrower_code,),
-    ).fetchone()
-
-    if borrower is None:
-        cursor = db.execute(
-            """
-            INSERT INTO borrowers (borrower_name, borrower_id, course_department, contact_number)
-            VALUES (?, ?, ?, ?)
-            """,
-            (borrower_name, borrower_code, course_department, contact_number),
-        )
-        return cursor.lastrowid
-
-    borrower_id = borrower["id"]
-    db.execute(
-        """
-        UPDATE borrowers
-        SET borrower_name = ?, course_department = ?, contact_number = ?
-        WHERE id = ?
-        """,
-        (borrower_name, course_department, contact_number, borrower_id),
-    )
-    return borrower_id
+    return to_doc(db.tools.find_one({"barcode": barcode_value.strip()}))
 
 
 def build_tool_payload(tool):
@@ -346,76 +243,163 @@ def build_tool_payload(tool):
         "quantity": tool["quantity"],
         "available_quantity": tool["available_quantity"],
         "barcode": tool["barcode"],
-        "barcode_image": tool["barcode_image"],
-        "tool_image": tool["tool_image"],
+        "barcode_image": tool.get("barcode_image"),
+        "tool_image": tool.get("tool_image"),
         "status": normalize_tool_status(tool),
     }
+
+
+def build_tool_filters(search, category, availability):
+    filters = {}
+    if search:
+        regex = {"$regex": search, "$options": "i"}
+        filters["$or"] = [
+            {"tool_name": regex},
+            {"tool_code": regex},
+            {"barcode": regex},
+            {"category": regex},
+            {"status": regex},
+        ]
+    if category:
+        filters["category"] = category
+    if availability == "available":
+        filters["available_quantity"] = {"$gt": 0}
+    elif availability == "unavailable":
+        filters["available_quantity"] = {"$lte": 0}
+    return filters
+
+
+def parse_tool_ids(raw_ids):
+    parsed = []
+    seen = set()
+    for raw in raw_ids:
+        s = str(raw).strip()
+        if not s or s in seen:
+            continue
+        if to_oid(s) is None:
+            continue
+        parsed.append(s)
+        seen.add(s)
+    return parsed
+
+
+def split_deletable_tool_ids(db, tool_ids):
+    if not tool_ids:
+        return [], []
+    oids = [to_oid(tid) for tid in tool_ids if to_oid(tid)]
+    rows = list(db.tools.find({"_id": {"$in": oids}}))
+    borrowed_ids = set()
+    for row in rows:
+        if db.transactions.count_documents({"tool_id": row["_id"], "status": "borrowed"}) > 0:
+            borrowed_ids.add(str(row["_id"]))
+    deletable_ids = [tid for tid in tool_ids if tid not in borrowed_ids]
+    blocked_tools = [to_doc(r) for r in rows if str(r["_id"]) in borrowed_ids]
+    return deletable_ids, blocked_tools
+
+
+# ---------------------------------------------------------------------------
+# Transaction join pipeline helpers
+# ---------------------------------------------------------------------------
+
+def _transaction_join_stages():
+    return [
+        {"$lookup": {"from": "borrowers", "localField": "borrower_id", "foreignField": "_id", "as": "borrower"}},
+        {"$lookup": {"from": "tools", "localField": "tool_id", "foreignField": "_id", "as": "tool_doc"}},
+        {"$lookup": {"from": "admins", "localField": "lent_by_admin_id", "foreignField": "_id", "as": "admin_doc"}},
+        {"$unwind": {"path": "$borrower", "preserveNullAndEmptyArrays": True}},
+        {"$unwind": {"path": "$tool_doc", "preserveNullAndEmptyArrays": True}},
+        {"$unwind": {"path": "$admin_doc", "preserveNullAndEmptyArrays": True}},
+        {"$project": {
+            "borrow_date": 1,
+            "expected_return_date": 1,
+            "return_date": 1,
+            "status": 1,
+            "barcode": 1,
+            "borrower_name": "$borrower.borrower_name",
+            "borrower_id": "$borrower.borrower_id",
+            "course_department": "$borrower.course_department",
+            "contact_number": "$borrower.contact_number",
+            "tool_id": {"$toString": "$tool_doc._id"},
+            "tool_name": "$tool_doc.tool_name",
+            "tool_code": "$tool_doc.tool_code",
+            "category": "$tool_doc.category",
+            "lent_by_admin_name": {
+                "$trim": {
+                    "input": {
+                        "$concat": [
+                            {"$ifNull": ["$admin_doc.first_name", ""]},
+                            " ",
+                            {"$ifNull": ["$admin_doc.last_name", ""]},
+                        ]
+                    }
+                }
+            },
+        }},
+    ]
+
+
+def get_active_borrow_transaction(db, barcode_value):
+    pipeline = [
+        {"$match": {"barcode": barcode_value.strip(), "status": "borrowed"}},
+        {"$sort": {"borrow_date": ASCENDING, "_id": ASCENDING}},
+        {"$limit": 1},
+        *_transaction_join_stages(),
+    ]
+    result = list(db.transactions.aggregate(pipeline))
+    return to_doc(result[0]) if result else None
+
+
+def get_transaction_with_joins(db, transaction_oid):
+    pipeline = [
+        {"$match": {"_id": transaction_oid}},
+        *_transaction_join_stages(),
+    ]
+    result = list(db.transactions.aggregate(pipeline))
+    return to_doc(result[0]) if result else None
 
 
 def build_transaction_payload(transaction):
     return {
         "id": transaction["id"],
-        "borrow_date": transaction["borrow_date"],
-        "expected_return_date": transaction["expected_return_date"],
-        "return_date": transaction["return_date"],
-        "status": transaction["status"],
-        "borrower_name": transaction["borrower_name"],
-        "borrower_id": transaction["borrower_id"],
-        "course_department": transaction["course_department"],
-        "contact_number": transaction["contact_number"],
-        "tool_id": transaction["tool_id"],
-        "tool_name": transaction["tool_name"],
-        "tool_code": transaction["tool_code"],
-        "category": transaction["category"],
-        "barcode": transaction["barcode"],
-        "lent_by_admin_name": transaction["lent_by_admin_name"],
+        "borrow_date": transaction.get("borrow_date"),
+        "expected_return_date": transaction.get("expected_return_date"),
+        "return_date": transaction.get("return_date"),
+        "status": transaction.get("status"),
+        "borrower_name": transaction.get("borrower_name"),
+        "borrower_id": transaction.get("borrower_id"),
+        "course_department": transaction.get("course_department"),
+        "contact_number": transaction.get("contact_number"),
+        "tool_id": transaction.get("tool_id"),
+        "tool_name": transaction.get("tool_name"),
+        "tool_code": transaction.get("tool_code"),
+        "category": transaction.get("category"),
+        "barcode": transaction.get("barcode"),
+        "lent_by_admin_name": transaction.get("lent_by_admin_name"),
     }
 
 
-def rows_to_dicts(rows):
-    return [dict(row) for row in rows]
+# ---------------------------------------------------------------------------
+# Borrower helpers
+# ---------------------------------------------------------------------------
+
+def upsert_borrower(db, borrower_name, borrower_code, course_department, contact_number):
+    result = db.borrowers.find_one_and_update(
+        {"borrower_id": borrower_code},
+        {"$set": {
+            "borrower_name": borrower_name,
+            "borrower_id": borrower_code,
+            "course_department": course_department,
+            "contact_number": contact_number,
+        }},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    return result["_id"]
 
 
-def get_ntp_now():
-    """Return current datetime synced from NTP. Falls back to local time if NTP unreachable."""
-    try:
-        c = ntplib.NTPClient()
-        response = c.request("pool.ntp.org", version=3, timeout=2)
-        # Convert NTP timestamp to local datetime
-        return datetime.fromtimestamp(response.tx_time)
-    except Exception:
-        return datetime.now()
-
-
-def get_project_profiles():
-    return [
-        {
-            "name": "BERTOLDO, Restygie D.",
-            "role": "Proponent",
-            "image": "BERTOLDO, Restygie D..jpg",
-        },
-        {
-            "name": "CASTUERAS, Rhenard R.",
-            "role": "Proponent",
-            "image": "CASTUERAS, Rhenard R..jpg",
-        },
-        {
-            "name": "VEDAD, Kim Jay C.",
-            "role": "Proponent",
-            "image": "VEDAD, Kim Jay C..jpg",
-        },
-        {
-            "name": "Nicky Jay R. Evangelista",
-            "role": "Adviser",
-            "image": "Nicky Jay R. Evangelista - Adviser.jpg",
-        },
-        {
-            "name": "Diane P. Arayata",
-            "role": "Technical Critic",
-            "image": "Diane P. Arayata - Technical critic.jpg",
-        },
-    ]
-
+# ---------------------------------------------------------------------------
+# Borrow / Return scan processors
+# ---------------------------------------------------------------------------
 
 def process_borrow_scan(db, payload):
     barcode_value = payload.get("barcode", "").strip()
@@ -449,57 +433,29 @@ def process_borrow_scan(db, payload):
             "tool": build_tool_payload(tool),
         }, 409
 
-    borrower_id = upsert_borrower(
-        db,
-        borrower_name,
-        borrower_code,
-        course_department,
-        contact_number,
-    )
+    borrower_oid = upsert_borrower(db, borrower_name, borrower_code, course_department, contact_number)
     borrow_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    lending_admin_id = session.get("admin_id")
+    admin_id_str = session.get("admin_id")
+    lending_admin_oid = to_oid(admin_id_str) if admin_id_str else None
 
-    cursor = db.execute(
-        """
-        INSERT INTO transactions
-        (borrower_id, tool_id, barcode, borrow_date, expected_return_date, return_date, status, lent_by_admin_id)
-        VALUES (?, ?, ?, ?, ?, NULL, 'borrowed', ?)
-        """,
-        (borrower_id, tool["id"], barcode_value, borrow_timestamp, "", lending_admin_id),
-    )
-    db.execute(
-        "UPDATE tools SET available_quantity = available_quantity - 1 WHERE id = ?",
-        (tool["id"],),
+    result = db.transactions.insert_one({
+        "borrower_id": borrower_oid,
+        "tool_id": to_oid(tool["id"]),
+        "barcode": barcode_value,
+        "borrow_date": borrow_timestamp,
+        "expected_return_date": "",
+        "return_date": None,
+        "status": "borrowed",
+        "lent_by_admin_id": lending_admin_oid,
+    })
+    db.tools.update_one(
+        {"_id": to_oid(tool["id"])},
+        {"$inc": {"available_quantity": -1}},
     )
     update_tool_status(db, tool["id"])
-    db.commit()
 
     updated_tool = get_tool_by_barcode(db, barcode_value)
-    saved_transaction = db.execute(
-        """
-        SELECT t.id,
-               t.borrow_date,
-               t.expected_return_date,
-               t.return_date,
-               t.status,
-               b.borrower_name,
-               b.borrower_id,
-               b.course_department,
-               b.contact_number,
-               tl.id AS tool_id,
-               tl.tool_name,
-               tl.tool_code,
-               tl.category,
-             t.barcode,
-             TRIM(COALESCE(a.first_name, '') || ' ' || COALESCE(a.last_name, '')) AS lent_by_admin_name
-        FROM transactions t
-        JOIN borrowers b ON b.id = t.borrower_id
-        JOIN tools tl ON tl.id = t.tool_id
-         LEFT JOIN admins a ON a.id = t.lent_by_admin_id
-        WHERE t.id = ?
-        """,
-        (cursor.lastrowid,),
-    ).fetchone()
+    saved_transaction = get_transaction_with_joins(db, result.inserted_id)
 
     return {
         "ok": True,
@@ -528,47 +484,19 @@ def process_return_scan(db, payload):
         }, 409
 
     returned_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    db.execute(
-        """
-        UPDATE transactions
-        SET return_date = ?, status = 'returned'
-        WHERE id = ?
-        """,
-        (returned_at, active_transaction["id"]),
+    transaction_oid = to_oid(active_transaction["id"])
+    db.transactions.update_one(
+        {"_id": transaction_oid},
+        {"$set": {"return_date": returned_at, "status": "returned"}},
     )
-    db.execute(
-        "UPDATE tools SET available_quantity = available_quantity + 1 WHERE id = ?",
-        (active_transaction["tool_id"],),
+    db.tools.update_one(
+        {"_id": to_oid(active_transaction["tool_id"])},
+        {"$inc": {"available_quantity": 1}},
     )
     update_tool_status(db, active_transaction["tool_id"])
-    db.commit()
 
     updated_tool = get_tool_by_barcode(db, barcode_value)
-    saved_transaction = db.execute(
-        """
-        SELECT t.id,
-               t.borrow_date,
-               t.expected_return_date,
-               t.return_date,
-               t.status,
-               b.borrower_name,
-               b.borrower_id,
-               b.course_department,
-               b.contact_number,
-               tl.id AS tool_id,
-               tl.tool_name,
-               tl.tool_code,
-               tl.category,
-             t.barcode,
-             TRIM(COALESCE(a.first_name, '') || ' ' || COALESCE(a.last_name, '')) AS lent_by_admin_name
-        FROM transactions t
-        JOIN borrowers b ON b.id = t.borrower_id
-        JOIN tools tl ON tl.id = t.tool_id
-         LEFT JOIN admins a ON a.id = t.lent_by_admin_id
-        WHERE t.id = ?
-        """,
-        (active_transaction["id"],),
-    ).fetchone()
+    saved_transaction = get_transaction_with_joins(db, transaction_oid)
 
     return {
         "ok": True,
@@ -580,117 +508,64 @@ def process_return_scan(db, payload):
     }, 200
 
 
-def generate_unique_barcode(db, length=12):
-    while True:
-        barcode_value = "".join(str(random.randint(0, 9)) for _ in range(length))
-        exists = db.execute("SELECT id FROM tools WHERE barcode = ?", (barcode_value,)).fetchone()
-        if not exists:
-            return barcode_value
+# ---------------------------------------------------------------------------
+# Page render helpers
+# ---------------------------------------------------------------------------
+
+def render_add_tool_page(db, generated_tool=None, form_data=None):
+    return render_template(
+        "add_tool.html",
+        generated_tool=generated_tool,
+        next_tool_code=generate_next_tool_code(db),
+        category_options=get_category_options((form_data or {}).get("category")),
+        form_data=form_data or {},
+    )
 
 
-def create_barcode_image(barcode_value):
-    os.makedirs(BARCODE_DIR, exist_ok=True)
-    file_stem = f"barcode_{barcode_value}"
-    path_without_ext = os.path.join(BARCODE_DIR, file_stem)
+def render_admins_page(db, form_data=None):
+    admins = to_docs(db.admins.find({}, {"username": 1, "first_name": 1, "last_name": 1}).sort("username", ASCENDING))
+    return render_template(
+        "admins.html",
+        admins=admins,
+        form_data=form_data or {},
+    )
 
-    code128 = barcode.get("code128", barcode_value, writer=ImageWriter())
-    generated_path = code128.save(path_without_ext)
-    return os.path.basename(generated_path)
 
+# ---------------------------------------------------------------------------
+# Misc helpers
+# ---------------------------------------------------------------------------
 
-def save_tool_image(file_storage):
-    if file_storage is None or not getattr(file_storage, "filename", ""):
+def parse_date_input(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
         return None
 
-    filename = secure_filename(file_storage.filename)
-    if not filename or "." not in filename:
-        return None
 
-    extension = filename.rsplit(".", 1)[1].lower()
-    if extension not in {"png", "jpg", "jpeg", "webp"}:
-        return None
-
-    os.makedirs(TOOL_IMAGE_DIR, exist_ok=True)
-    generated_name = f"tool_{uuid.uuid4().hex[:12]}.{extension}"
-    save_path = os.path.join(TOOL_IMAGE_DIR, generated_name)
-    file_storage.save(save_path)
-    return generated_name
+def get_ntp_now():
+    try:
+        c = ntplib.NTPClient()
+        response = c.request("pool.ntp.org", version=3, timeout=2)
+        return datetime.fromtimestamp(response.tx_time)
+    except Exception:
+        return datetime.now()
 
 
-def parse_tool_ids(raw_ids):
-    parsed_ids = []
-    seen_ids = set()
-
-    for raw_id in raw_ids:
-        try:
-            tool_id = int(raw_id)
-        except (TypeError, ValueError):
-            continue
-
-        if tool_id in seen_ids:
-            continue
-
-        parsed_ids.append(tool_id)
-        seen_ids.add(tool_id)
-
-    return parsed_ids
+def get_project_profiles():
+    return [
+        {"name": "BERTOLDO, Restygie D.", "role": "Proponent", "image": "BERTOLDO, Restygie D..jpg"},
+        {"name": "CASTUERAS, Rhenard R.", "role": "Proponent", "image": "CASTUERAS, Rhenard R..jpg"},
+        {"name": "VEDAD, Kim Jay C.", "role": "Proponent", "image": "VEDAD, Kim Jay C..jpg"},
+        {"name": "Nicky Jay R. Evangelista", "role": "Adviser", "image": "Nicky Jay R. Evangelista - Adviser.jpg"},
+        {"name": "Diane P. Arayata", "role": "Technical Critic", "image": "Diane P. Arayata - Technical critic.jpg"},
+    ]
 
 
-def split_deletable_tool_ids(db, tool_ids):
-    if not tool_ids:
-        return [], []
-
-    placeholders = ",".join("?" for _ in tool_ids)
-    rows = db.execute(
-        f"""
-        SELECT t.id, t.tool_name,
-               EXISTS(
-                   SELECT 1
-                   FROM transactions tr
-                   WHERE tr.tool_id = t.id AND tr.status = 'borrowed'
-               ) AS is_borrowed
-        FROM tools t
-        WHERE t.id IN ({placeholders})
-        """,
-        tool_ids,
-    ).fetchall()
-
-    borrowed_ids = {row["id"] for row in rows if row["is_borrowed"]}
-    deletable_ids = [tool_id for tool_id in tool_ids if tool_id not in borrowed_ids]
-    blocked_tools = [row for row in rows if row["is_borrowed"]]
-    return deletable_ids, blocked_tools
-
-
-def build_tool_filters(search, category, availability):
-    where_clauses = ["1 = 1"]
-    params = []
-
-    if search:
-        where_clauses.append(
-            """
-            (
-                tool_name LIKE ?
-                OR tool_code LIKE ?
-                OR barcode LIKE ?
-                OR category LIKE ?
-                OR status LIKE ?
-            )
-            """
-        )
-        wildcard = f"%{search}%"
-        params.extend([wildcard, wildcard, wildcard, wildcard, wildcard])
-
-    if category:
-        where_clauses.append("category = ?")
-        params.append(category)
-
-    if availability == "available":
-        where_clauses.append("available_quantity > 0")
-    elif availability == "unavailable":
-        where_clauses.append("available_quantity <= 0")
-
-    return " AND ".join(where_clauses), params
-
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 
 @app.route("/")
 def index():
@@ -726,16 +601,16 @@ def login():
             return render_template("login.html")
 
         db = get_db()
-        admin = db.execute("SELECT * FROM admins WHERE username = ?", (username,)).fetchone()
+        admin = db.admins.find_one({"username": username})
 
         if admin is None or not check_password_hash(admin["password_hash"], password):
             flash("Invalid username or password.", "danger")
             return render_template("login.html")
 
         session.clear()
-        session["admin_id"] = admin["id"]
+        session["admin_id"] = str(admin["_id"])
         session["admin_username"] = admin["username"]
-        session["admin_full_name"] = f"{admin['first_name']} {admin['last_name']}".strip()
+        session["admin_full_name"] = f"{admin.get('first_name', '')} {admin.get('last_name', '')}".strip()
         flash("Welcome back!", "success")
         return redirect(url_for("dashboard"))
 
@@ -761,11 +636,7 @@ def admins():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         confirm_password = request.form.get("confirm_password", "")
-        form_data = {
-            "first_name": first_name,
-            "last_name": last_name,
-            "username": username,
-        }
+        form_data = {"first_name": first_name, "last_name": last_name, "username": username}
 
         if not first_name or not last_name or not username or not password or not confirm_password:
             flash("First name, last name, username, password, and confirmation are required.", "danger")
@@ -787,26 +658,23 @@ def admins():
             flash("Password confirmation does not match.", "danger")
             return render_admins_page(db, form_data=form_data)
 
-        duplicate_admin = db.execute(
-            "SELECT id FROM admins WHERE username = ?",
-            (username,),
-        ).fetchone()
-        if duplicate_admin is not None:
+        if db.admins.find_one({"username": username}):
             flash("That username is already in use.", "danger")
             return render_admins_page(db, form_data=form_data)
 
-        db.execute(
-            "INSERT INTO admins (first_name, last_name, username, password_hash) VALUES (?, ?, ?, ?)",
-            (first_name, last_name, username, generate_password_hash(password)),
-        )
-        db.commit()
+        db.admins.insert_one({
+            "first_name": first_name,
+            "last_name": last_name,
+            "username": username,
+            "password_hash": generate_password_hash(password),
+        })
         flash("New admin account created successfully.", "success")
         return redirect(url_for("admins"))
 
     return render_admins_page(db)
 
 
-@app.route("/admins/<int:admin_id>/edit", methods=["GET", "POST"])
+@app.route("/admins/<admin_id>/edit", methods=["GET", "POST"])
 @login_required
 def edit_admin(admin_id):
     current_admin_id = session.get("admin_id")
@@ -815,10 +683,8 @@ def edit_admin(admin_id):
         return redirect(url_for("edit_admin", admin_id=current_admin_id))
 
     db = get_db()
-    admin = db.execute(
-        "SELECT id, first_name, last_name, username FROM admins WHERE id = ?",
-        (admin_id,),
-    ).fetchone()
+    admin_oid = to_oid(admin_id)
+    admin = to_doc(db.admins.find_one({"_id": admin_oid}, {"username": 1, "first_name": 1, "last_name": 1}))
 
     if admin is None:
         flash("Admin account not found.", "danger")
@@ -830,13 +696,7 @@ def edit_admin(admin_id):
         username = request.form.get("username", "").strip()
         new_password = request.form.get("new_password", "")
         confirm_password = request.form.get("confirm_password", "")
-
-        form_admin = {
-            "id": admin_id,
-            "first_name": first_name,
-            "last_name": last_name,
-            "username": username,
-        }
+        form_admin = {"id": admin_id, "first_name": first_name, "last_name": last_name, "username": username}
 
         if not first_name or not last_name or not username:
             flash("First name, last name, and username are required.", "danger")
@@ -850,13 +710,11 @@ def edit_admin(admin_id):
             flash("Username must be at least 3 characters long.", "danger")
             return render_template("admin_edit.html", admin=form_admin)
 
-        duplicate_admin = db.execute(
-            "SELECT id FROM admins WHERE username = ? AND id != ?",
-            (username, admin_id),
-        ).fetchone()
-        if duplicate_admin is not None:
+        if db.admins.find_one({"username": username, "_id": {"$ne": admin_oid}}):
             flash("That username is already in use.", "danger")
             return render_template("admin_edit.html", admin=form_admin)
+
+        update_fields = {"first_name": first_name, "last_name": last_name, "username": username}
 
         if new_password or confirm_password:
             if len(new_password) < 6:
@@ -865,26 +723,9 @@ def edit_admin(admin_id):
             if new_password != confirm_password:
                 flash("Password confirmation does not match.", "danger")
                 return render_template("admin_edit.html", admin=form_admin)
+            update_fields["password_hash"] = generate_password_hash(new_password)
 
-            db.execute(
-                """
-                UPDATE admins
-                SET first_name = ?, last_name = ?, username = ?, password_hash = ?
-                WHERE id = ?
-                """,
-                (first_name, last_name, username, generate_password_hash(new_password), admin_id),
-            )
-        else:
-            db.execute(
-                """
-                UPDATE admins
-                SET first_name = ?, last_name = ?, username = ?
-                WHERE id = ?
-                """,
-                (first_name, last_name, username, admin_id),
-            )
-
-        db.commit()
+        db.admins.update_one({"_id": admin_oid}, {"$set": update_fields})
         session["admin_username"] = username
         session["admin_full_name"] = f"{first_name} {last_name}".strip()
         flash("Your account details were updated successfully.", "success")
@@ -898,38 +739,34 @@ def edit_admin(admin_id):
 def dashboard():
     db = get_db()
 
-    total_tools = db.execute("SELECT COUNT(*) AS total FROM tools").fetchone()["total"]
-    available_tools = db.execute(
-        "SELECT COUNT(*) AS total FROM tools WHERE available_quantity > 0"
-    ).fetchone()["total"]
-    borrowed_tools = db.execute(
-        "SELECT COUNT(*) AS total FROM transactions WHERE status = 'borrowed'"
-    ).fetchone()["total"]
-    returned_today = db.execute(
-        "SELECT COUNT(*) AS total FROM transactions WHERE DATE(return_date) = ?",
-        (date.today().isoformat(),),
-    ).fetchone()["total"]
-    total_transactions = db.execute("SELECT COUNT(*) AS total FROM transactions").fetchone()["total"]
-    total_admins = db.execute("SELECT COUNT(*) AS total FROM admins").fetchone()["total"]
+    total_tools = db.tools.count_documents({})
+    available_tools = db.tools.count_documents({"available_quantity": {"$gt": 0}})
+    borrowed_tools = db.transactions.count_documents({"status": "borrowed"})
+    returned_today = db.transactions.count_documents({
+        "return_date": {"$regex": f"^{date.today().isoformat()}"},
+    })
+    total_transactions = db.transactions.count_documents({})
+    total_admins = db.admins.count_documents({})
 
-    recent_transactions = db.execute(
-        """
-        SELECT t.id,
-               b.borrower_name,
-               b.borrower_id,
-               tl.tool_name,
-               t.barcode,
-               t.borrow_date,
-               t.expected_return_date,
-               t.return_date,
-               t.status
-        FROM transactions t
-        JOIN borrowers b ON b.id = t.borrower_id
-        JOIN tools tl ON tl.id = t.tool_id
-        ORDER BY t.id DESC
-        LIMIT 10
-        """
-    ).fetchall()
+    pipeline = [
+        {"$sort": {"_id": DESCENDING}},
+        {"$limit": 10},
+        {"$lookup": {"from": "borrowers", "localField": "borrower_id", "foreignField": "_id", "as": "borrower"}},
+        {"$lookup": {"from": "tools", "localField": "tool_id", "foreignField": "_id", "as": "tool_doc"}},
+        {"$unwind": {"path": "$borrower", "preserveNullAndEmptyArrays": True}},
+        {"$unwind": {"path": "$tool_doc", "preserveNullAndEmptyArrays": True}},
+        {"$project": {
+            "borrower_name": "$borrower.borrower_name",
+            "borrower_id": "$borrower.borrower_id",
+            "tool_name": "$tool_doc.tool_name",
+            "barcode": 1,
+            "borrow_date": 1,
+            "expected_return_date": 1,
+            "return_date": 1,
+            "status": 1,
+        }},
+    ]
+    recent_transactions = to_docs(db.transactions.aggregate(pipeline))
 
     return render_template(
         "dashboard.html",
@@ -957,25 +794,17 @@ def tools():
         page = 1
 
     per_page = 9
-    where_sql, params = build_tool_filters(search, category, availability)
-    total_items = db.execute(
-        f"SELECT COUNT(*) AS total FROM tools WHERE {where_sql}",
-        params,
-    ).fetchone()["total"]
+    filters = build_tool_filters(search, category, availability)
+    total_items = db.tools.count_documents(filters)
     total_pages = max(1, (total_items + per_page - 1) // per_page)
     page = min(page, total_pages)
     offset = (page - 1) * per_page
 
-    query = f"""
-        SELECT id, tool_name, tool_code, category, description, quantity,
-               available_quantity, barcode, barcode_image, status, date_added, tool_image
-        FROM tools
-        WHERE {where_sql}
-        ORDER BY id DESC
-        LIMIT ? OFFSET ?
-    """
-    tool_rows = db.execute(query, [*params, per_page, offset]).fetchall()
-    categories = db.execute("SELECT DISTINCT category FROM tools ORDER BY category").fetchall()
+    tool_rows = to_docs(db.tools.find(filters).sort("_id", DESCENDING).skip(offset).limit(per_page))
+    categories = [c["_id"] for c in db.tools.aggregate([
+        {"$group": {"_id": "$category"}},
+        {"$sort": {"_id": ASCENDING}},
+    ])]
 
     return render_template(
         "tools.html",
@@ -1003,17 +832,8 @@ def print_selected_barcodes():
         flash("Select at least one tool barcode to print.", "warning")
         return redirect(url_for("tools"))
 
-    placeholders = ",".join("?" for _ in valid_ids)
-    rows = db.execute(
-        f"""
-        SELECT id, tool_name, tool_code, category, barcode, barcode_image
-        FROM tools
-        WHERE id IN ({placeholders})
-        ORDER BY id DESC
-        """,
-        valid_ids,
-    ).fetchall()
-
+    oids = [to_oid(tid) for tid in valid_ids if to_oid(tid)]
+    rows = to_docs(db.tools.find({"_id": {"$in": oids}}).sort("_id", DESCENDING))
     return render_template("print_barcodes.html", tools=rows, print_title="Selected Tool Barcodes")
 
 
@@ -1024,18 +844,9 @@ def print_all_barcodes():
     search = request.args.get("search", "").strip()
     category = request.args.get("category", "").strip()
     availability = request.args.get("availability", "").strip()
-    where_sql, params = build_tool_filters(search, category, availability)
+    filters = build_tool_filters(search, category, availability)
 
-    rows = db.execute(
-        f"""
-        SELECT id, tool_name, tool_code, category, barcode, barcode_image
-        FROM tools
-        WHERE {where_sql}
-        ORDER BY id DESC
-        """,
-        params,
-    ).fetchall()
-
+    rows = to_docs(db.tools.find(filters).sort("_id", DESCENDING))
     if not rows:
         flash("No tool barcodes available to print for the current filter.", "warning")
         return redirect(url_for("tools", search=search, category=category, availability=availability))
@@ -1054,6 +865,7 @@ def add_tool():
         description = request.form.get("description", "").strip()
         quantity_text = request.form.get("quantity", "0").strip()
         uploaded_tool_image = save_tool_image(request.files.get("tool_image"))
+
         if not all([tool_name, category]):
             flash("Tool name and category are required.", "danger")
             return redirect(url_for("tools"))
@@ -1076,46 +888,35 @@ def add_tool():
 
         for offset in range(quantity):
             tool_code = format_tool_code(start_number + offset)
-            barcode = generate_unique_barcode(db)
-            barcode_image = create_barcode_image(barcode)
-            db.execute(
-                """
-                INSERT INTO tools
-                (tool_name, tool_code, category, description, quantity, available_quantity, barcode, barcode_image, tool_image, status, date_added)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    tool_name,
-                    tool_code,
-                    category,
-                    description,
-                    1,
-                    1,
-                    barcode,
-                    barcode_image,
-                    uploaded_tool_image,
-                    "Available",
-                    created_time,
-                ),
-            )
+            barcode_val = generate_unique_barcode(db)
+            barcode_image = create_barcode_image(barcode_val)
+            db.tools.insert_one({
+                "tool_name": tool_name,
+                "tool_code": tool_code,
+                "category": category,
+                "description": description,
+                "quantity": 1,
+                "available_quantity": 1,
+                "barcode": barcode_val,
+                "barcode_image": barcode_image,
+                "tool_image": uploaded_tool_image,
+                "status": "Available",
+                "date_added": created_time,
+            })
             created_codes.append(tool_code)
 
-        db.commit()
-
-        flash(
-            f"Created {quantity} tool unit(s): {created_codes[0]} to {created_codes[-1]}.",
-            "success",
-        )
+        flash(f"Created {quantity} tool unit(s): {created_codes[0]} to {created_codes[-1]}.", "success")
         return redirect(url_for("tools"))
 
     return redirect(url_for("tools"))
 
 
-@app.route("/tools/<int:tool_id>/edit", methods=["GET", "POST"])
+@app.route("/tools/<tool_id>/edit", methods=["GET", "POST"])
 @login_required
 def edit_tool(tool_id):
     db = get_db()
-    tool = db.execute("SELECT * FROM tools WHERE id = ?", (tool_id,)).fetchone()
+    tool_oid = to_oid(tool_id)
+    tool = to_doc(db.tools.find_one({"_id": tool_oid}))
 
     if tool is None:
         flash("Tool not found.", "danger")
@@ -1126,34 +927,18 @@ def edit_tool(tool_id):
         category = request.form.get("category", "").strip()
         description = request.form.get("description", "").strip()
         quantity_text = request.form.get("quantity", "0").strip()
-        barcode = request.form.get("barcode", "").strip()
+        barcode_val = request.form.get("barcode", "").strip()
         tool_code = tool["tool_code"]
         form_tool = dict(tool)
-        form_tool.update(
-            {
-                "tool_name": tool_name,
-                "category": category,
-                "description": description,
-                "quantity": quantity_text,
-                "barcode": barcode,
-            }
-        )
+        form_tool.update({"tool_name": tool_name, "category": category, "description": description, "quantity": quantity_text, "barcode": barcode_val})
 
-        if not all([tool_name, category, barcode]):
+        if not all([tool_name, category, barcode_val]):
             flash("Tool name, category, and barcode are required.", "danger")
-            return render_template(
-                "edit_tool.html",
-                tool=form_tool,
-                category_options=get_category_options(category),
-            )
+            return render_template("edit_tool.html", tool=form_tool, category_options=get_category_options(category))
 
         if category not in get_category_options(tool["category"]):
             flash("Please select a valid category.", "danger")
-            return render_template(
-                "edit_tool.html",
-                tool=form_tool,
-                category_options=get_category_options(category),
-            )
+            return render_template("edit_tool.html", tool=form_tool, category_options=get_category_options(category))
 
         try:
             quantity = int(quantity_text)
@@ -1161,79 +946,44 @@ def edit_tool(tool_id):
                 raise ValueError
         except ValueError:
             flash("Quantity must be a non-negative number.", "danger")
-            return render_template(
-                "edit_tool.html",
-                tool=form_tool,
-                category_options=get_category_options(category),
-            )
+            return render_template("edit_tool.html", tool=form_tool, category_options=get_category_options(category))
 
-        duplicate_barcode = db.execute(
-            "SELECT id FROM tools WHERE barcode = ? AND id != ?",
-            (barcode, tool_id),
-        ).fetchone()
-        if duplicate_barcode:
+        if db.tools.find_one({"barcode": barcode_val, "_id": {"$ne": tool_oid}}):
             flash("Barcode already exists. Please use a unique barcode.", "danger")
-            return render_template(
-                "edit_tool.html",
-                tool=form_tool,
-                category_options=get_category_options(category),
-            )
+            return render_template("edit_tool.html", tool=form_tool, category_options=get_category_options(category))
 
-        borrowed_count = db.execute(
-            "SELECT COUNT(*) AS total FROM transactions WHERE tool_id = ? AND status = 'borrowed'",
-            (tool_id,),
-        ).fetchone()["total"]
-
+        borrowed_count = db.transactions.count_documents({"tool_id": tool_oid, "status": "borrowed"})
         if quantity < borrowed_count:
-            flash(
-                "Quantity cannot be less than currently borrowed units.",
-                "danger",
-            )
-            return render_template(
-                "edit_tool.html",
-                tool=form_tool,
-                category_options=get_category_options(category),
-            )
+            flash("Quantity cannot be less than currently borrowed units.", "danger")
+            return render_template("edit_tool.html", tool=form_tool, category_options=get_category_options(category))
 
         available_quantity = max(0, quantity - borrowed_count)
         status = "Available" if available_quantity > 0 else "Unavailable"
-        barcode_image = tool["barcode_image"]
-        if tool["barcode"] != barcode or not barcode_image:
-            barcode_image = create_barcode_image(barcode)
+        barcode_image = tool.get("barcode_image")
+        if tool["barcode"] != barcode_val or not barcode_image:
+            barcode_image = create_barcode_image(barcode_val)
 
-        db.execute(
-            """
-            UPDATE tools
-            SET tool_name = ?, tool_code = ?, category = ?, description = ?,
-                quantity = ?, available_quantity = ?, barcode = ?, barcode_image = ?, status = ?
-            WHERE id = ?
-            """,
-            (
-                tool_name,
-                tool_code,
-                category,
-                description,
-                quantity,
-                available_quantity,
-                barcode,
-                barcode_image,
-                status,
-                tool_id,
-            ),
+        db.tools.update_one(
+            {"_id": tool_oid},
+            {"$set": {
+                "tool_name": tool_name,
+                "tool_code": tool_code,
+                "category": category,
+                "description": description,
+                "quantity": quantity,
+                "available_quantity": available_quantity,
+                "barcode": barcode_val,
+                "barcode_image": barcode_image,
+                "status": status,
+            }},
         )
-        db.commit()
-
         flash("Tool updated successfully.", "success")
         return redirect(url_for("tools"))
 
-    return render_template(
-        "edit_tool.html",
-        tool=tool,
-        category_options=get_category_options(tool["category"]),
-    )
+    return render_template("edit_tool.html", tool=tool, category_options=get_category_options(tool["category"]))
 
 
-@app.route("/tools/<int:tool_id>/delete", methods=["POST"])
+@app.route("/tools/<tool_id>/delete", methods=["POST"])
 @login_required
 def delete_tool(tool_id):
     _ = tool_id
@@ -1244,27 +994,22 @@ def delete_tool(tool_id):
 @app.route("/tools/delete-selected", methods=["POST"])
 @login_required
 def delete_selected_tools():
-    _ = request.form.getlist("tool_ids")
     flash("Bulk tool deletion is disabled to preserve inventory history.", "warning")
     return redirect(url_for("tools"))
 
 
-@app.route("/tools/<int:tool_id>/barcode/regenerate", methods=["POST"])
+@app.route("/tools/<tool_id>/barcode/regenerate", methods=["POST"])
 @login_required
 def regenerate_tool_barcode(tool_id):
     db = get_db()
-    tool = db.execute("SELECT id, barcode FROM tools WHERE id = ?", (tool_id,)).fetchone()
+    tool_oid = to_oid(tool_id)
+    tool = db.tools.find_one({"_id": tool_oid}, {"barcode": 1})
     if tool is None:
         flash("Tool not found.", "danger")
         return redirect(url_for("tools"))
 
     barcode_image = create_barcode_image(tool["barcode"])
-    db.execute(
-        "UPDATE tools SET barcode_image = ? WHERE id = ?",
-        (barcode_image, tool_id),
-    )
-    db.commit()
-
+    db.tools.update_one({"_id": tool_oid}, {"$set": {"barcode_image": barcode_image}})
     flash("Barcode image generated successfully.", "success")
     return redirect(url_for("tools"))
 
@@ -1304,7 +1049,6 @@ def api_process_scan():
 @login_required
 def transactions():
     db = get_db()
-
     search = request.args.get("search", "").strip()
     status = request.args.get("status", "").strip()
     borrower = request.args.get("borrower", "").strip()
@@ -1312,63 +1056,35 @@ def transactions():
     date_from = request.args.get("date_from", "").strip()
     date_to = request.args.get("date_to", "").strip()
 
-    query = """
-        SELECT t.id,
-               b.borrower_name,
-               b.borrower_id,
-               tl.tool_name,
-               t.barcode,
-               t.borrow_date,
-               t.expected_return_date,
-               t.return_date,
-               t.status,
-               TRIM(COALESCE(a.first_name, '') || ' ' || COALESCE(a.last_name, '')) AS lent_by_admin_name
-        FROM transactions t
-        JOIN borrowers b ON b.id = t.borrower_id
-        JOIN tools tl ON tl.id = t.tool_id
-        LEFT JOIN admins a ON a.id = t.lent_by_admin_id
-        WHERE 1 = 1
-    """
-    params = []
+    pipeline = [*_transaction_join_stages()]
 
+    match = {}
     if search:
-        query += """
-            AND (
-                b.borrower_name LIKE ?
-                OR b.borrower_id LIKE ?
-                OR tl.tool_name LIKE ?
-                OR t.barcode LIKE ?
-                OR t.status LIKE ?
-                OR a.first_name LIKE ?
-                OR a.last_name LIKE ?
-            )
-        """
-        wildcard = f"%{search}%"
-        params.extend([wildcard, wildcard, wildcard, wildcard, wildcard, wildcard, wildcard])
-
+        regex = {"$regex": search, "$options": "i"}
+        match["$or"] = [
+            {"borrower_name": regex},
+            {"borrower_id": regex},
+            {"tool_name": regex},
+            {"barcode": regex},
+            {"status": regex},
+            {"lent_by_admin_name": regex},
+        ]
     if status:
-        query += " AND t.status = ?"
-        params.append(status)
-
+        match["status"] = status
     if borrower:
-        query += " AND b.borrower_id LIKE ?"
-        params.append(f"%{borrower}%")
-
+        match["borrower_id"] = {"$regex": borrower, "$options": "i"}
     if tool:
-        query += " AND tl.tool_name LIKE ?"
-        params.append(f"%{tool}%")
-
+        match["tool_name"] = {"$regex": tool, "$options": "i"}
     if date_from:
-        query += " AND DATE(t.borrow_date) >= DATE(?)"
-        params.append(date_from)
-
+        match.setdefault("borrow_date", {})["$gte"] = date_from
     if date_to:
-        query += " AND DATE(t.borrow_date) <= DATE(?)"
-        params.append(date_to)
+        match.setdefault("borrow_date", {})["$lte"] = date_to + " 23:59:59"
 
-    query += " ORDER BY t.id DESC"
+    if match:
+        pipeline.append({"$match": match})
+    pipeline.append({"$sort": {"_id": DESCENDING}})
 
-    rows = db.execute(query, params).fetchall()
+    rows = to_docs(db.transactions.aggregate(pipeline))
 
     return render_template(
         "transactions.html",
@@ -1387,66 +1103,72 @@ def transactions():
 def reports():
     db = get_db()
 
-    most_borrowed_tools = db.execute(
-        """
-        SELECT tl.tool_name, tl.tool_code, tl.barcode, COUNT(*) AS borrow_count
-        FROM transactions t
-        JOIN tools tl ON tl.id = t.tool_id
-        GROUP BY t.tool_id
-        ORDER BY borrow_count DESC
-        LIMIT 10
-        """
-    ).fetchall()
+    most_borrowed_pipeline = [
+        {"$group": {"_id": "$tool_id", "borrow_count": {"$sum": 1}}},
+        {"$sort": {"borrow_count": DESCENDING}},
+        {"$limit": 10},
+        {"$lookup": {"from": "tools", "localField": "_id", "foreignField": "_id", "as": "tool_doc"}},
+        {"$unwind": {"path": "$tool_doc", "preserveNullAndEmptyArrays": True}},
+        {"$project": {
+            "tool_name": "$tool_doc.tool_name",
+            "tool_code": "$tool_doc.tool_code",
+            "barcode": "$tool_doc.barcode",
+            "borrow_count": 1,
+        }},
+    ]
+    most_borrowed_tools = to_docs(db.transactions.aggregate(most_borrowed_pipeline))
 
-    currently_borrowed = db.execute(
-        """
-        SELECT t.id,
-               b.borrower_name,
-               b.borrower_id,
-               tl.tool_name,
-               tl.tool_code,
-               t.barcode,
-               t.borrow_date,
-               t.expected_return_date,
-               CASE
-                   WHEN DATE(t.expected_return_date) < DATE('now') THEN 1
-                   ELSE 0
-               END AS is_overdue
-        FROM transactions t
-        JOIN borrowers b ON b.id = t.borrower_id
-        JOIN tools tl ON tl.id = t.tool_id
-        WHERE t.status = 'borrowed'
-        ORDER BY t.borrow_date ASC
-        """
-    ).fetchall()
+    currently_borrowed_pipeline = [
+        {"$match": {"status": "borrowed"}},
+        {"$sort": {"borrow_date": ASCENDING}},
+        {"$lookup": {"from": "borrowers", "localField": "borrower_id", "foreignField": "_id", "as": "borrower"}},
+        {"$lookup": {"from": "tools", "localField": "tool_id", "foreignField": "_id", "as": "tool_doc"}},
+        {"$unwind": {"path": "$borrower", "preserveNullAndEmptyArrays": True}},
+        {"$unwind": {"path": "$tool_doc", "preserveNullAndEmptyArrays": True}},
+        {"$project": {
+            "borrower_name": "$borrower.borrower_name",
+            "borrower_id": "$borrower.borrower_id",
+            "tool_name": "$tool_doc.tool_name",
+            "tool_code": "$tool_doc.tool_code",
+            "barcode": 1,
+            "borrow_date": 1,
+            "expected_return_date": 1,
+            "is_overdue": {
+                "$cond": {
+                    "if": {"$and": [
+                        {"$ne": ["$expected_return_date", ""]},
+                        {"$ne": ["$expected_return_date", None]},
+                        {"$lt": ["$expected_return_date", date.today().isoformat()]},
+                    ]},
+                    "then": 1,
+                    "else": 0,
+                }
+            },
+        }},
+    ]
+    currently_borrowed = to_docs(db.transactions.aggregate(currently_borrowed_pipeline))
 
-    borrow_summary = db.execute(
-        """
-        SELECT DATE(borrow_date) AS date, COUNT(*) AS count
-        FROM transactions
-        GROUP BY DATE(borrow_date)
-        ORDER BY date ASC
-        LIMIT 30
-        """
-    ).fetchall()
+    borrow_summary = list(db.transactions.aggregate([
+        {"$group": {"_id": {"$substrCP": ["$borrow_date", 0, 10]}, "count": {"$sum": 1}}},
+        {"$sort": {"_id": ASCENDING}},
+        {"$limit": 30},
+        {"$project": {"date": "$_id", "count": 1, "_id": 0}},
+    ]))
 
-    return_summary = db.execute(
-        """
-        SELECT DATE(return_date) AS date, COUNT(*) AS count
-        FROM transactions
-        WHERE return_date IS NOT NULL
-        GROUP BY DATE(return_date)
-        ORDER BY date ASC
-        LIMIT 30
-        """
-    ).fetchall()
+    return_summary = list(db.transactions.aggregate([
+        {"$match": {"return_date": {"$ne": None}}},
+        {"$group": {"_id": {"$substrCP": ["$return_date", 0, 10]}, "count": {"$sum": 1}}},
+        {"$sort": {"_id": ASCENDING}},
+        {"$limit": 30},
+        {"$project": {"date": "$_id", "count": 1, "_id": 0}},
+    ]))
 
     return render_template(
         "reports.html",
         most_borrowed_tools=most_borrowed_tools,
         currently_borrowed=currently_borrowed,
-        borrow_summary=rows_to_dicts(borrow_summary),
-        return_summary=rows_to_dicts(return_summary),
+        borrow_summary=borrow_summary,
+        return_summary=return_summary,
     )
 
 
@@ -1454,44 +1176,16 @@ def reports():
 @login_required
 def export_tools_csv():
     db = get_db()
-    tools = db.execute(
-        """
-        SELECT tool_name, tool_code, category, description, quantity,
-               available_quantity, barcode, barcode_image, status, date_added
-        FROM tools
-        ORDER BY id DESC
-        """
-    ).fetchall()
+    tools_list = to_docs(db.tools.find({}).sort("_id", DESCENDING))
 
     view_mode = request.args.get("view", "csv").strip().lower()
     if view_mode == "table":
-        headers = [
-            "Tool Name",
-            "Tool Code",
-            "Category",
-            "Description",
-            "Quantity",
-            "Available Quantity",
-            "Barcode",
-            "Barcode Image",
-            "Status",
-            "Date Added",
-        ]
-        table_rows = [
-            [
-                row["tool_name"],
-                row["tool_code"],
-                row["category"],
-                row["description"],
-                row["quantity"],
-                row["available_quantity"],
-                row["barcode"],
-                row["barcode_image"],
-                row["status"],
-                row["date_added"],
-            ]
-            for row in tools
-        ]
+        headers = ["Tool Name", "Tool Code", "Category", "Description", "Quantity", "Available Quantity", "Barcode", "Barcode Image", "Status", "Date Added"]
+        table_rows = [[
+            row["tool_name"], row["tool_code"], row["category"], row.get("description"),
+            row["quantity"], row["available_quantity"], row["barcode"],
+            row.get("barcode_image"), row["status"], row.get("date_added"),
+        ] for row in tools_list]
         return render_template(
             "export_table.html",
             title="Tools Export (Printable Table)",
@@ -1504,100 +1198,34 @@ def export_tools_csv():
 
     output = StringIO()
     writer = csv.writer(output)
-    writer.writerow(
-        [
-            "Tool Name",
-            "Tool Code",
-            "Category",
-            "Description",
-            "Quantity",
-            "Available Quantity",
-            "Barcode",
-            "Barcode Image",
-            "Status",
-            "Date Added",
-        ]
-    )
-
-    for row in tools:
-        writer.writerow(
-            [
-                row["tool_name"],
-                row["tool_code"],
-                row["category"],
-                row["description"],
-                row["quantity"],
-                row["available_quantity"],
-                row["barcode"],
-                row["barcode_image"],
-                row["status"],
-                row["date_added"],
-            ]
-        )
-
+    writer.writerow(["Tool Name", "Tool Code", "Category", "Description", "Quantity", "Available Quantity", "Barcode", "Barcode Image", "Status", "Date Added"])
+    for row in tools_list:
+        writer.writerow([
+            row["tool_name"], row["tool_code"], row["category"], row.get("description"),
+            row["quantity"], row["available_quantity"], row["barcode"],
+            row.get("barcode_image"), row["status"], row.get("date_added"),
+        ])
     csv_content = output.getvalue()
     output.close()
-
-    return Response(
-        csv_content,
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=tools_export.csv"},
-    )
+    return Response(csv_content, mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=tools_export.csv"})
 
 
 @app.route("/export/transactions.csv")
 @login_required
 def export_transactions_csv():
     db = get_db()
-    rows = db.execute(
-        """
-        SELECT t.id,
-               b.borrower_name,
-               b.borrower_id,
-               tl.tool_name,
-               t.barcode,
-               t.borrow_date,
-               t.expected_return_date,
-               t.return_date,
-               t.status,
-               TRIM(COALESCE(a.first_name, '') || ' ' || COALESCE(a.last_name, '')) AS lent_by_admin_name
-        FROM transactions t
-        JOIN borrowers b ON b.id = t.borrower_id
-        JOIN tools tl ON tl.id = t.tool_id
-        LEFT JOIN admins a ON a.id = t.lent_by_admin_id
-        ORDER BY t.id DESC
-        """
-    ).fetchall()
+    pipeline = [*_transaction_join_stages(), {"$sort": {"_id": DESCENDING}}]
+    rows = to_docs(db.transactions.aggregate(pipeline))
 
     view_mode = request.args.get("view", "csv").strip().lower()
     if view_mode == "table":
-        headers = [
-            "Transaction ID",
-            "Borrower Name",
-            "Borrower ID",
-            "Tool Name",
-            "Barcode",
-            "Borrow Date",
-            "Expected Return Date",
-            "Return Date",
-            "Status",
-            "Lent By",
-        ]
-        table_rows = [
-            [
-                row["id"],
-                row["borrower_name"],
-                row["borrower_id"],
-                row["tool_name"],
-                row["barcode"],
-                row["borrow_date"],
-                row["expected_return_date"],
-                row["return_date"],
-                row["status"],
-                row["lent_by_admin_name"],
-            ]
-            for row in rows
-        ]
+        headers = ["Transaction ID", "Borrower Name", "Borrower ID", "Tool Name", "Barcode", "Borrow Date", "Expected Return Date", "Return Date", "Status", "Lent By"]
+        table_rows = [[
+            row["id"], row.get("borrower_name"), row.get("borrower_id"),
+            row.get("tool_name"), row.get("barcode"), row.get("borrow_date"),
+            row.get("expected_return_date"), row.get("return_date"),
+            row.get("status"), row.get("lent_by_admin_name"),
+        ] for row in rows]
         return render_template(
             "export_table.html",
             title="Transactions Export (Printable Table)",
@@ -1610,115 +1238,39 @@ def export_transactions_csv():
 
     output = StringIO()
     writer = csv.writer(output)
-    writer.writerow(
-        [
-            "Transaction ID",
-            "Borrower Name",
-            "Borrower ID",
-            "Tool Name",
-            "Barcode",
-            "Borrow Date",
-            "Expected Return Date",
-            "Return Date",
-            "Status",
-            "Lent By",
-        ]
-    )
-
+    writer.writerow(["Transaction ID", "Borrower Name", "Borrower ID", "Tool Name", "Barcode", "Borrow Date", "Expected Return Date", "Return Date", "Status", "Lent By"])
     for row in rows:
-        writer.writerow(
-            [
-                row["id"],
-                row["borrower_name"],
-                row["borrower_id"],
-                row["tool_name"],
-                row["barcode"],
-                row["borrow_date"],
-                row["expected_return_date"],
-                row["return_date"],
-                row["status"],
-                row["lent_by_admin_name"],
-            ]
-        )
-
+        writer.writerow([
+            row["id"], row.get("borrower_name"), row.get("borrower_id"),
+            row.get("tool_name"), row.get("barcode"), row.get("borrow_date"),
+            row.get("expected_return_date"), row.get("return_date"),
+            row.get("status"), row.get("lent_by_admin_name"),
+        ])
     csv_content = output.getvalue()
     output.close()
-
-    return Response(
-        csv_content,
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=transactions_export.csv"},
-    )
+    return Response(csv_content, mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=transactions_export.csv"})
 
 
-@app.route("/api/tool/<barcode>")
+@app.route("/api/tool/<barcode_val>")
 @login_required
-def api_tool_by_barcode(barcode):
+def api_tool_by_barcode(barcode_val):
     db = get_db()
-    tool = db.execute(
-        """
-        SELECT id, tool_name, tool_code, category, quantity,
-             available_quantity, barcode, barcode_image, tool_image, status
-        FROM tools WHERE barcode = ?
-        """,
-        (barcode.strip(),),
-    ).fetchone()
-
+    tool = get_tool_by_barcode(db, barcode_val)
     if tool is None:
         return {"found": False}
-
-    return {
-        "found": True,
-        "tool": {
-            "id": tool["id"],
-            "tool_name": tool["tool_name"],
-            "tool_code": tool["tool_code"],
-            "category": tool["category"],
-            "quantity": tool["quantity"],
-            "available_quantity": tool["available_quantity"],
-            "barcode": tool["barcode"],
-            "barcode_image": tool["barcode_image"],
-            "tool_image": tool["tool_image"],
-            "status": normalize_tool_status(tool),
-        },
-    }
+    return {"found": True, "tool": build_tool_payload(tool)}
 
 
-@app.route("/api/borrowed/<barcode>")
+@app.route("/api/borrowed/<barcode_val>")
 @login_required
-def api_borrowed_by_barcode(barcode):
+def api_borrowed_by_barcode(barcode_val):
     db = get_db()
-    row = db.execute(
-        """
-        SELECT t.id,
-               t.borrow_date,
-               t.expected_return_date,
-               t.status,
-               b.borrower_name,
-               b.borrower_id,
-               b.course_department,
-               b.contact_number,
-               tl.tool_name,
-               tl.tool_code,
-               tl.category,
-             t.barcode,
-             TRIM(COALESCE(a.first_name, '') || ' ' || COALESCE(a.last_name, '')) AS lent_by_admin_name
-        FROM transactions t
-        JOIN borrowers b ON b.id = t.borrower_id
-        JOIN tools tl ON tl.id = t.tool_id
-         LEFT JOIN admins a ON a.id = t.lent_by_admin_id
-        WHERE t.barcode = ? AND t.status = 'borrowed'
-        ORDER BY t.borrow_date ASC, t.id ASC
-        LIMIT 1
-        """,
-        (barcode.strip(),),
-    ).fetchone()
-
+    row = get_active_borrow_transaction(db, barcode_val)
     if row is None:
         return {"found": False}
 
     is_overdue = False
-    expected_date = parse_date_input(row["expected_return_date"])
+    expected_date = parse_date_input(row.get("expected_return_date"))
     if expected_date and date.today() > expected_date:
         is_overdue = True
 
@@ -1726,19 +1278,19 @@ def api_borrowed_by_barcode(barcode):
         "found": True,
         "transaction": {
             "id": row["id"],
-            "borrow_date": row["borrow_date"],
-            "expected_return_date": row["expected_return_date"],
-            "status": row["status"],
+            "borrow_date": row.get("borrow_date"),
+            "expected_return_date": row.get("expected_return_date"),
+            "status": row.get("status"),
             "is_overdue": is_overdue,
-            "borrower_name": row["borrower_name"],
-            "borrower_id": row["borrower_id"],
-            "course_department": row["course_department"],
-            "contact_number": row["contact_number"],
-            "tool_name": row["tool_name"],
-            "tool_code": row["tool_code"],
-            "category": row["category"],
-            "barcode": row["barcode"],
-            "lent_by_admin_name": row["lent_by_admin_name"],
+            "borrower_name": row.get("borrower_name"),
+            "borrower_id": row.get("borrower_id"),
+            "course_department": row.get("course_department"),
+            "contact_number": row.get("contact_number"),
+            "tool_name": row.get("tool_name"),
+            "tool_code": row.get("tool_code"),
+            "category": row.get("category"),
+            "barcode": row.get("barcode"),
+            "lent_by_admin_name": row.get("lent_by_admin_name"),
         },
     }
 

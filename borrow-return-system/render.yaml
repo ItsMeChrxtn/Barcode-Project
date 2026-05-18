@@ -4,10 +4,12 @@ services:
     env: python
     plan: free
     rootDir: borrow-return-system
-    buildCommand: pip install -r requirements.txt && python init_db.py
+    buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
     healthCheckPath: /healthz
     envVars:
+      - key: MONGODB_URI
+        sync: false
       - key: FLASK_SECRET_KEY
         generateValue: true
       - key: FLASK_HOST
