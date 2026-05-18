@@ -3,7 +3,8 @@ services:
     name: borrow-return-system-api
     env: python
     plan: free
-    buildCommand: pip install -r requirements.txt
+    rootDir: borrow-return-system
+    buildCommand: pip install -r requirements.txt && python init_db.py
     startCommand: gunicorn app:app
     healthCheckPath: /healthz
     envVars:
