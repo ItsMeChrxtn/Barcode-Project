@@ -21,12 +21,12 @@
 
             <div id="borrowerFields" class="borrower-grid panel-subtle p-4">
                 <div>
-                    <label class="block text-sm font-medium mb-1">Borrower Name</label>
-                    <input type="text" name="borrower_name" class="input-field" />
+                    <label class="block text-sm font-medium mb-1">Borrower ID</label>
+                    <input type="text" id="borrowerIdInput" name="borrower_id" class="input-field" placeholder="Scan or enter Borrower ID" />
                 </div>
                 <div>
-                    <label class="block text-sm font-medium mb-1">Borrower ID</label>
-                    <input type="text" name="borrower_id" class="input-field" />
+                    <label class="block text-sm font-medium mb-1">Borrower Name</label>
+                    <input type="text" name="borrower_name" class="input-field" />
                 </div>
                 <div>
                     <label class="block text-sm font-medium mb-1">Course / Department</label>
@@ -60,6 +60,7 @@
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         const form = document.getElementById('scanForm');
+        const borrowerIdInput = document.getElementById('borrowerIdInput');
         const barcodeInput = document.getElementById('barcodeInput');
         const modeInput = document.getElementById('modeInput');
         const modeDescription = document.getElementById('modeDescription');
@@ -70,6 +71,7 @@
         const resultBox = document.getElementById('scanResult');
         const modeButtons = document.querySelectorAll('[data-mode-button]');
         let isProcessing = false;
+        let autoPopulateTimeout;
 
         function escapeHtml(value) {
             return String(value ?? '')
@@ -106,6 +108,60 @@
             }
 
             resultBox.innerHTML = rows.length ? rows.join('') : '<p>No barcode scanned yet.</p>';
+        }
+
+        async function fetchBorrowerDetails(borrowerId) {
+            if (!borrowerId || borrowerId.trim().length === 0) {
+                return null;
+            }
+
+            try {
+                const response = await fetch(`/api/borrower/${encodeURIComponent(borrowerId)}`);
+                if (!response.ok) {
+                    return null;
+                }
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Error fetching borrower details:', error);
+                return null;
+            }
+        }
+
+        async function autoPopulateBorrowerFields() {
+            const borrowerId = borrowerIdInput.value.trim();
+            
+            // Clear timeout if exists
+            if (autoPopulateTimeout) {
+                clearTimeout(autoPopulateTimeout);
+            }
+
+            if (borrowerId.length === 0) {
+                // Clear other fields if ID is cleared
+                form.borrower_name.value = '';
+                form.course_department.value = '';
+                form.contact_number.value = '';
+                return;
+            }
+
+            // Debounce the fetch to avoid too many requests while typing
+            autoPopulateTimeout = setTimeout(async () => {
+                const borrowerData = await fetchBorrowerDetails(borrowerId);
+                if (borrowerData) {
+                    form.borrower_name.value = borrowerData.borrower_name || '';
+                    form.course_department.value = borrowerData.course_department || '';
+                    form.contact_number.value = borrowerData.contact_number || '';
+                    // Move focus to barcode input after auto-populating
+                    if (modeInput.value === 'borrow') {
+                        setTimeout(() => barcodeInput.focus(), 100);
+                    }
+                } else {
+                    // Borrower not found - clear fields
+                    form.borrower_name.value = '';
+                    form.course_department.value = '';
+                    form.contact_number.value = '';
+                }
+            }, 300); // 300ms debounce
         }
 
         function setMode(mode) {
@@ -176,6 +232,7 @@
             }
         }
 
+        // Event listeners
         modeButtons.forEach((button) => {
             button.addEventListener('click', () => setMode(button.dataset.modeButton));
         });
@@ -191,6 +248,11 @@
                 processScan();
             }
         });
+
+        // Auto-populate when borrower ID is entered or changed
+        borrowerIdInput.addEventListener('change', autoPopulateBorrowerFields);
+        borrowerIdInput.addEventListener('blur', autoPopulateBorrowerFields);
+        borrowerIdInput.addEventListener('keyup', autoPopulateBorrowerFields);
 
         setMode('borrow');
     });

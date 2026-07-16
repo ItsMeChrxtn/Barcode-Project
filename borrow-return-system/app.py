@@ -1295,6 +1295,24 @@ def api_borrowed_by_barcode(barcode_val):
     }
 
 
+@app.route("/api/borrower/<borrower_id>")
+@login_required
+def api_borrower_by_id(borrower_id):
+    db = get_db()
+    borrower = db.borrowers.find_one({"borrower_id": borrower_id.strip()})
+    
+    if borrower is None:
+        return {"found": False}, 404
+    
+    return {
+        "found": True,
+        "borrower_id": borrower.get("borrower_id"),
+        "borrower_name": borrower.get("borrower_name"),
+        "course_department": borrower.get("course_department"),
+        "contact_number": borrower.get("contact_number"),
+    }
+
+
 @app.template_filter("status_label")
 def status_label(status_value):
     status_map = {
