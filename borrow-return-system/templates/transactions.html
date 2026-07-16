@@ -35,7 +35,8 @@
                 <thead>
                     <tr class="text-left border-b">
                         <th class="py-2 pr-3">Transaction ID</th>
-                        <th class="py-2 pr-3">Borrower</th>
+                        <th class="py-2 pr-3">Borrower ID</th>
+                        <th class="py-2 pr-3">Borrower Name</th>
                         <th class="py-2 pr-3">Lent By</th>
                         <th class="py-2 pr-3">Tool</th>
                         <th class="py-2 pr-3">Barcode</th>
@@ -49,7 +50,8 @@
                     {% for tx in transactions %}
                     <tr class="border-b last:border-0">
                         <td class="py-2 pr-3">{{ tx.id }}</td>
-                        <td class="py-2 pr-3">{{ tx.borrower_name }} ({{ tx.borrower_id }})</td>
+                        <td class="py-2 pr-3">{{ tx.borrower_id }}</td>
+                        <td class="py-2 pr-3">{{ tx.borrower_name }}</td>
                         <td class="py-2 pr-3">{{ tx.lent_by_admin_name or '-' }}</td>
                         <td class="py-2 pr-3">{{ tx.tool_name }}</td>
                         <td class="py-2 pr-3">{{ tx.barcode }}</td>
@@ -62,7 +64,7 @@
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="9" class="py-4 text-center text-slate-500">No transactions found.</td>
+                        <td colspan="10" class="py-4 text-center text-slate-500">No transactions found.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
