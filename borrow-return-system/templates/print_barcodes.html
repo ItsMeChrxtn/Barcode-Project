@@ -67,6 +67,16 @@
             padding: 10px 14px;
             cursor: pointer;
             font-weight: 600;
+            margin-right: 8px;
+        }
+        .print-actions button:hover {
+            background: #166534;
+        }
+        .print-actions button.word-btn {
+            background: #2563eb;
+        }
+        .print-actions button.word-btn:hover {
+            background: #1d4ed8;
         }
         @media print {
             body {
@@ -115,15 +125,28 @@
             <p style="margin:6px 0 0; font-size: 12px; color:#4b5563;">{{ tools|length }} barcode(s) ready for printing</p>
         </div>
         <div class="print-actions">
-            <button type="button" onclick="window.print()">Print Now</button>
+            <button type="button" onclick="window.print()">🖨️ Print Now</button>
+            <button type="button" class="word-btn" onclick="downloadAsWord()">📄 Download as Word</button>
         </div>
     </div>
+
+    <!-- Hidden form for Word export -->
+    <form id="wordExportForm" style="display:none;" method="POST">
+        {% for tool in tools %}
+        <input type="hidden" name="tool_ids" value="{{ tool._id }}">
+        {% endfor %}
+    </form>
 
     <div class="print-grid">
         {% for tool in tools %}
         <section class="barcode-sheet-card">
             {% if tool.barcode_image %}
-            <img src="{{ url_for('static', filename='barcodes/' + tool.barcode_image) }}" alt="Barcode {{ tool.barcode }}" />
+                {% set img_src = url_for('static', filename='barcodes/' + tool.barcode_image) %}
+                <img src="{{ img_src }}" alt="Barcode {{ tool.barcode }}" onerror="this.style.display='none'" />
+            {% else %}
+                <div style="width: 100%; height: 86px; background: #f0f0f0; display: flex; align-items: center; justify-content: center; margin-bottom: 6px; border: 1px dashed #ccc; border-radius: 4px;">
+                    <span style="color: #999; font-size: 12px;">No barcode image</span>
+                </div>
             {% endif %}
             <div class="barcode-title">{{ tool.tool_name }}</div>
             <div class="barcode-meta">
@@ -144,5 +167,26 @@
             }, 250);
         }
     })();
+
+    function downloadAsWord() {
+        const form = document.getElementById('wordExportForm');
+        const isSelectedBarcodes = "{{ print_title }}".includes('Selected');
+        
+        if (isSelectedBarcodes) {
+            form.action = "{{ url_for('export_selected_barcodes_to_word') }}";
+        } else {
+            // For all barcodes, we need to pass the query parameters
+            const params = new URLSearchParams(window.location.search);
+            const searchParams = new URLSearchParams();
+            if (params.get('search')) searchParams.append('search', params.get('search'));
+            if (params.get('category')) searchParams.append('category', params.get('category'));
+            if (params.get('availability')) searchParams.append('availability', params.get('availability'));
+            
+            window.location.href = "{{ url_for('export_all_barcodes_to_word') }}" + (searchParams.toString() ? '?' + searchParams.toString() : '');
+            return;
+        }
+        
+        form.submit();
+    }
 </script>
 </html>

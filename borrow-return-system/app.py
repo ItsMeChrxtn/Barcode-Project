@@ -5,7 +5,7 @@ import random
 import uuid
 from datetime import datetime, date, timezone, timedelta
 from functools import wraps
-from io import StringIO
+from io import StringIO, BytesIO
 
 from bson import ObjectId
 from flask import (
@@ -22,6 +22,9 @@ from flask import (
 )
 import barcode
 from barcode.writer import ImageWriter
+from docx import Document
+from docx.shared import Inches, Pt, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from flask_cors import CORS
 from pymongo import MongoClient, ReturnDocument, ASCENDING, DESCENDING
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -854,6 +857,123 @@ def print_all_barcodes():
     return render_template("print_barcodes.html", tools=rows, print_title="All Tool Barcodes")
 
 
+def create_barcodes_word_document(tools, title):
+    """Generate a Word document with resizable barcodes"""
+    doc = Document()
+    doc.add_heading(title, level=1)
+    doc.add_paragraph(f"{len(tools)} barcode(s) ready for printing/resizing")
+    doc.add_paragraph()  # Add blank line
+
+    # Create a table with 3 columns for better layout
+    table = doc.add_table(rows=1, cols=3)
+    table.style = 'Light Grid Accent 1'
+    
+    # Set table width and cell height
+    for row in table.rows:
+        for cell in row.cells:
+            cell.width = Inches(2.0)
+
+    for i, tool in enumerate(tools):
+        # Add new row if needed
+        if i % 3 == 0 and i != 0:
+            row = table.add_row()
+        else:
+            row = table.rows[-1]
+
+        cell = row.cells[i % 3]
+        
+        # Clear all paragraphs first
+        for _ in range(len(cell.paragraphs)):
+            p = cell.paragraphs[0]._element
+            p.getparent().remove(p)
+        
+        # Add barcode image to cell
+        if tool.get('barcode_image'):
+            barcode_path = os.path.join(BARCODE_DIR, tool['barcode_image'])
+            if os.path.exists(barcode_path):
+                try:
+                    paragraph = cell.add_paragraph()
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run = paragraph.add_run()
+                    run.add_picture(barcode_path, width=Inches(1.8))
+                except Exception as e:
+                    error_para = cell.add_paragraph()
+                    error_para.text = f"Error: {str(e)}"
+        else:
+            # If no barcode image, add placeholder
+            para = cell.add_paragraph()
+            para.text = "[No barcode image]"
+            para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # Add tool information in a new paragraph
+        info_para = cell.add_paragraph()
+        info_para.paragraph_format.space_before = Pt(6)
+        info_run = info_para.add_run(f"{tool.get('tool_name', 'N/A')}\n")
+        info_run.font.size = Pt(9)
+        info_run.font.bold = True
+        
+        info_run2 = info_para.add_run(f"Code: {tool.get('tool_code', 'N/A')}\n")
+        info_run2.font.size = Pt(8)
+        
+        info_run3 = info_para.add_run(f"Barcode: {tool.get('barcode', 'N/A')}")
+        info_run3.font.size = Pt(8)
+
+    return doc
+
+
+@app.route("/tools/barcodes/download-selected-word", methods=["POST"])
+@login_required
+def export_selected_barcodes_to_word():
+    db = get_db()
+    valid_ids = parse_tool_ids(request.form.getlist("tool_ids"))
+
+    if not valid_ids:
+        flash("Select at least one tool barcode to export.", "warning")
+        return redirect(url_for("tools"))
+
+    oids = [to_oid(tid) for tid in valid_ids if to_oid(tid)]
+    rows = to_docs(db.tools.find({"_id": {"$in": oids}}).sort("_id", DESCENDING))
+    
+    doc = create_barcodes_word_document(rows, "Selected Tool Barcodes")
+    
+    doc_io = BytesIO()
+    doc.save(doc_io)
+    doc_io.seek(0)
+    
+    return Response(
+        doc_io.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": "attachment; filename=selected_barcodes.docx"}
+    )
+
+
+@app.route("/tools/barcodes/download-all-word")
+@login_required
+def export_all_barcodes_to_word():
+    db = get_db()
+    search = request.args.get("search", "").strip()
+    category = request.args.get("category", "").strip()
+    availability = request.args.get("availability", "").strip()
+    filters = build_tool_filters(search, category, availability)
+
+    rows = to_docs(db.tools.find(filters).sort("_id", DESCENDING))
+    if not rows:
+        flash("No tool barcodes available to export for the current filter.", "warning")
+        return redirect(url_for("tools", search=search, category=category, availability=availability))
+
+    doc = create_barcodes_word_document(rows, "All Tool Barcodes")
+    
+    doc_io = BytesIO()
+    doc.save(doc_io)
+    doc_io.seek(0)
+    
+    return Response(
+        doc_io.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": "attachment; filename=all_barcodes.docx"}
+    )
+
+
 @app.route("/tools/add", methods=["GET", "POST"])
 @login_required
 def add_tool():
@@ -1011,6 +1131,24 @@ def regenerate_tool_barcode(tool_id):
     barcode_image = create_barcode_image(tool["barcode"])
     db.tools.update_one({"_id": tool_oid}, {"$set": {"barcode_image": barcode_image}})
     flash("Barcode image generated successfully.", "success")
+    return redirect(url_for("tools"))
+
+
+@app.route("/tools/regenerate-all-barcodes", methods=["GET", "POST"])
+@login_required
+def regenerate_all_barcodes():
+    db = get_db()
+    tools = db.tools.find()
+    count = 0
+    for tool in tools:
+        if not tool.get("barcode_image"):
+            barcode_image = create_barcode_image(tool["barcode"])
+            db.tools.update_one({"_id": tool["_id"]}, {"$set": {"barcode_image": barcode_image}})
+            count += 1
+    if count > 0:
+        flash(f"Regenerated barcode images for {count} tool(s).", "success")
+    else:
+        flash("All tools already have barcode images.", "info")
     return redirect(url_for("tools"))
 
 
